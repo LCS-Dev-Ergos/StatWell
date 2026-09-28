@@ -29,9 +29,18 @@ conversation.
   GitHub Actions checks for host-native packaging and Linux runtime contracts.
   It does not add the deferred Nix package-update provider or activate either
   user's existing service configuration.
+- Phase-five GitHub Actions run 36455837568 passed on 2026-09-28 at commit
+  `3418e9c`: Ubuntu 24.04 built the package and Home Manager generation and
+  passed Clang Debug, ASan/UBSan, and GCC runtime tests; macOS 15 built its
+  package and Home Manager generation. The first run exposed a GCC warning
+  in the Linux directory deleter, corrected before the passing run.
+- Before closing the project or releasing its first stable version, perform
+  the security, correctness, robustness, and performance audit described in
+  `docs/release-audit.md`. The user requested this gate on 2026-09-28.
 
 ## Open work
 
-- Confirm the GitHub Actions jobs complete on Linux and macOS, then migrate
-  consumers one at a time. Verify the Mach watcher against the real bar at
-  migration time.
+- Migrate consumers one at a time in phase six. Verify the Mach watcher
+  against the real bar and Kitty against a live tab bar after the user runs
+  the Dotfiles switch. Keep a tested rollback path for each migration.
+- Complete the release audit and resolve its findings before a stable tag.

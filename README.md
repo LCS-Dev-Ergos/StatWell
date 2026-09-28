@@ -227,6 +227,9 @@ PSI `some avg10` value maps to normal below 1%, warning from 1% to below
 5. Add the Home Manager module, finish Nix packaging, and run host-native CI.
 6. Migrate SketchyBar and Kitty one consumer at a time, retaining a tested
    rollback path until the replacements are verified on the real surfaces.
+7. Complete the [first stable release audit](docs/release-audit.md) across
+   security, correctness, robustness, and performance before project closure
+   or a stable release.
 
 The Nix package-update provider is intentionally outside the current scope.
 
