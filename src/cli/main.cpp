@@ -1,7 +1,7 @@
 //===---------------------------------------------------------------------------===//
 /**
  * @file main.cpp
- * @author StatWell contributors
+ * @author LCS.Dev - StatWell
  * @brief One-shot CLI with versioned JSON and key/value output.
  * @version 0.1
  * @date 2026-09-28
@@ -37,11 +37,12 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Metric::count)> 
 
 struct Options {
   std::array<bool, kNames.size()> selected{true, true, true, true, true, false};
-  bool                            explicit_metrics = false;
-  bool                            json             = true;
-  std::string                     disk_path;
-  std::string                     interface_name;
-  int                             interval_ms = 200;
+
+  bool        explicit_metrics = false;
+  bool        json             = true;
+  std::string disk_path;
+  std::string interface_name;
+  int         interval_ms = 200;
 };
 
 struct Field {

@@ -1,7 +1,7 @@
 //===---------------------------------------------------------------------------===//
 /**
  * @file metrics.hpp
- * @author StatWell contributors
+ * @author LCS.Dev - StatWell
  * @brief Typed system metrics and platform-independent calculations.
  * @version 0.1
  * @date 2026-09-28

@@ -15,13 +15,15 @@ conversation.
 - The Nix **package-update provider** is deferred at the user's request. Nix
   packaging for supported hosts remains in scope.
 - C++23 is the library language level so public probe results can use
-  `std::expected`. The first phase is the macOS probe library, a one-shot CLI,
-  and their tests. Linux probes, the daemon, package-update providers, Home
-  Manager integration, and consumer migration follow in later phases.
+  `std::expected`. Phase one built the macOS probe library and one-shot CLI.
+  Phase two adds Linux probes with recorded procfs/sysfs fixtures. The daemon,
+  package-update providers, Home Manager integration, and consumer migration
+  follow in later phases.
 
 ## Open work
 
-- Implement the Linux backend using recorded `/proc` and `/sys` fixtures.
+- Run the Linux backend on an actual Linux host; fixture tests and compile
+  checks on macOS do not establish Linux runtime behavior.
 - Define and implement the versioned daemon snapshot protocol, sampling
   schedule, and platform user services.
 - Add Homebrew and pacman providers with bounded execution, then the Home

@@ -1,7 +1,7 @@
 //===---------------------------------------------------------------------------===//
 /**
  * @file probes.hpp
- * @author StatWell contributors
+ * @author LCS.Dev - StatWell
  * @brief Narrow native probe interface and stateful rate samplers.
  * @version 0.1
  * @date 2026-09-28

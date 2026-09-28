@@ -1,5 +1,5 @@
 # ================================================================================= #
-# ------------------------- Makefile for StatWell -------------------------------- #
+# ----------------------------- Makefile for StatWell ----------------------------- #
 # ================================================================================= #
 #
 # Thin convenience layer over CMake and CTest. All local build outputs go under
@@ -19,7 +19,7 @@ CXX_COMPILER := $(CLANG_COMPILER)
 BUILD_TYPE := Debug
 EXTRA_CXX_FLAGS :=
 EXTRA_LINK_FLAGS :=
-PLATFORM_SOURCE := src/platform/linux_stub.cpp
+PLATFORM_SOURCE := src/platform/linux.cpp
 
 ifeq ($(shell uname -s),Darwin)
   PLATFORM_SOURCE := src/platform/darwin.cpp
@@ -68,7 +68,8 @@ format-check:
 	clang-format --dry-run --Werror include/statwell/*.hpp src/*.cpp src/cli/*.cpp src/platform/*.cpp tests/*.cpp
 
 tidy: build
-	clang-tidy -p $(BUILD_DIR) src/metrics.cpp $(PLATFORM_SOURCE) src/cli/main.cpp tests/metrics_test.cpp
+	clang-tidy -p $(BUILD_DIR) src/metrics.cpp src/platform/linux_parsers.cpp \
+		$(PLATFORM_SOURCE) src/cli/main.cpp tests/metrics_test.cpp tests/linux_parsers_test.cpp
 
 nix-build:
 	nix build .#statwell --no-link

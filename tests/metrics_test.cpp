@@ -1,7 +1,7 @@
 //===---------------------------------------------------------------------------===//
 /**
  * @file metrics_test.cpp
- * @author StatWell contributors
+ * @author LCS.Dev - StatWell
  * @brief Boundary tests for platform-independent metric calculations.
  * @version 0.1
  * @date 2026-09-28
