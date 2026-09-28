@@ -38,7 +38,7 @@ struct MemoryRecords {
 struct BatteryRecords {
   std::string_view capacity;
   std::string_view status;
-  bool external_power = false;
+  bool             external_power = false;
 };
 
 /** @brief Parse capacity and charge state from a sysfs battery. */

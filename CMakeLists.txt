@@ -21,7 +21,7 @@ include(CMakePackageConfigHelpers)
 
 # --------------------------------- Probe Library --------------------------------- #
 
-add_library(statwell_core STATIC src/metrics.cpp src/platform/linux_parsers.cpp)
+add_library(statwell_core STATIC src/metrics.cpp src/platform/linux_parsers.cpp src/registry.cpp src/runtime.cpp src/watch.cpp)
 target_compile_features(statwell_core PUBLIC cxx_std_23)
 set_target_properties(statwell_core PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(statwell_core PUBLIC
@@ -39,7 +39,7 @@ else()
   message(FATAL_ERROR "StatWell currently supports macOS and Linux only")
 endif()
 
-# --------------------------------- One-Shot CLI ---------------------------------- #
+# ------------------------------ CLI and Daemon ---------------------------------- #
 
 add_executable(statwell src/cli/main.cpp)
 set_target_properties(statwell PROPERTIES CXX_EXTENSIONS OFF)
@@ -53,6 +53,17 @@ install(TARGETS statwell_core statwell EXPORT StatWellTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/statwell DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(APPLE)
+  configure_file(services/dev.lcs.statwell.plist.in
+    ${CMAKE_CURRENT_BINARY_DIR}/dev.lcs.statwell.plist @ONLY)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/dev.lcs.statwell.plist
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/statwell/services)
+else()
+  configure_file(services/statwell.service.in
+    ${CMAKE_CURRENT_BINARY_DIR}/statwell.service @ONLY)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/statwell.service
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/statwell/services)
+endif()
 install(EXPORT StatWellTargets NAMESPACE StatWell::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/StatWell)
 configure_package_config_file(cmake/StatWellConfig.cmake.in
@@ -86,5 +97,8 @@ if(STATWELL_BUILD_TESTS)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   add_test(NAME statwell_cli_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_contract.py
+      $<TARGET_FILE:statwell>)
+  add_test(NAME statwell_daemon_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/daemon_contract.py
       $<TARGET_FILE:statwell>)
 endif()

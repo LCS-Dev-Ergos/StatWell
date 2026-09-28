@@ -5,10 +5,10 @@ and Linux. Its goal is to sample metrics once and make the same typed data
 available to terminal bars, desktop bars, and other local clients.
 
 The current implementation samples CPU, memory, load, disk, battery, and a
-named network interface on macOS and Linux through a one-shot CLI. The shared
-daemon, package-update providers, services, and consumer integrations are
-upcoming phases. The CLI output below is version 1; it is not yet the daemon
-snapshot protocol.
+named network interface on macOS and Linux. A user daemon publishes those
+readings to an owner-only snapshot file. Package-update providers and consumer
+integrations are upcoming phases. The one-shot CLI output and shared snapshot
+protocol each have their own version-1 schema.
 
 ## Build
 
@@ -24,6 +24,9 @@ make test PROFILE=asan
 Use `make help` for the profile and toolchain options. For a compiler whose
 C++ ABI differs from an installed GoogleTest binary, set
 `GTEST_SOURCE_DIR=/path/to/googletest` to compile the tests with that compiler.
+`make build` also links the selected profile's `compile_commands.json` into
+the repository root for clangd. Run `make compdb PROFILE=debug` to refresh
+that link without compiling, or choose another profile to inspect its flags.
 For a plain CMake build without GoogleTest, configure with
 `-DSTATWELL_BUILD_TESTS=OFF` and a binary directory under `builds/`.
 The flake exposes `packages.aarch64-darwin.default`, `packages.x86_64-linux.default`,
@@ -55,6 +58,58 @@ The JSON and key/value formats both carry `schema_version` or
 error codes are part of their versioned contract. See `statwell --help` for
 options and exit statuses.
 
+## Shared daemon and snapshot
+
+```sh
+statwell daemon --interface en0
+statwell snapshot
+statwell watch --metric cpu --event statwell_cpu  # macOS SketchyBar
+```
+
+The daemon stays in the foreground for a user service manager. Its default
+cadences are CPU/network 2 s, memory/load 5 s, battery 30 s and disk 60 s.
+Override a cadence with `--cadence NAME=MS` (100 through 3600000 ms), for
+example `--cadence disk=120000`. The network probe needs `--interface NAME`;
+without one it reports an explicit error. `--disk-path` selects a filesystem.
+The daemon handles SIGINT and SIGTERM, skips missed intervals after sleep, and
+allows only one instance per runtime directory.
+
+On Linux, the directory defaults to `$XDG_RUNTIME_DIR/statwell-UID`; on macOS,
+to `$TMPDIR/statwell-UID`. If that environment variable is absent, `/tmp` is
+the parent. `--runtime-dir` overrides the location for both the daemon and
+clients. The directory must belong to the current user and have mode `0700`;
+the lock and snapshot are regular files with mode `0600`. The daemon writes a
+temporary file, syncs it, and renames it over `snapshot.json`. A client reads
+the complete old or new document. `statwell snapshot` reads it while the
+daemon is active, then falls back to a one-shot sample when the daemon is
+absent. Insecure permissions, an oversized file or an unsupported schema
+prefix produce an error.
+
+The [snapshot protocol](docs/snapshot-protocol.md) specifies freshness,
+sequence numbers, units and recovery. `watch` reads the same snapshot and
+sends a SketchyBar Mach event whenever the selected metric's sequence changes.
+The first [daemon measurements](docs/performance.md) record idle RSS, CPU and
+per-probe latency on the macOS development host.
+It registers the supplied event name, then sends `status`, timestamps,
+sequence, and all fields in `value` as event variables. SketchyBar consumers
+are migrated in a later phase; the existing widgets are still unchanged.
+
+The installed package includes inactive service templates in
+`share/statwell/services/`: `dev.lcs.statwell.plist` on macOS and
+`statwell.service` on Linux. Their executable path is filled in by CMake at
+install time. Copy the appropriate template to `~/Library/LaunchAgents/` or
+`~/.config/systemd/user/`, adjust `--interface` for network sampling, then
+load or enable it as a user service. The upcoming Home Manager module will
+manage that wiring. Installing the package alone does not start a service.
+
+Other clients can read the JSON without talking to the daemon. For example,
+Kitty can use Python's `json.load(open(path))` to read `snapshot.json` without
+spawning another program; check freshness as specified in the protocol. For
+tmux, `statwell snapshot | jq -r '.metrics.cpu.value.total_percent'` can feed a
+status script. A Waybar custom module can run the same command for memory, or
+read the file directly. These examples show the data interface; packaged
+consumer configurations are part of the migration phase.
+
 ## Code map
 
 - `include/statwell/metrics.hpp` and `src/metrics.cpp`: typed values,
@@ -67,6 +122,9 @@ options and exit statuses.
   `statvfs`. `src/platform/linux_parsers.cpp` is shared with the
   fixture tests so malformed records can be checked on either platform.
 - `src/cli/main.cpp`: one-shot CLI and versioned output.
+- `src/registry.cpp`: built-in probe state, serialization and registration.
+- `src/runtime.cpp`: generic cadence scheduling and the private snapshot transport.
+- `src/watch.cpp`: SketchyBar Mach watcher on macOS.
 
 The macOS backend uses kernel CPU counters, anonymous plus wired plus
 compressed memory minus purgeable pages, and the kernel memory-pressure

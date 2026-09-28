@@ -28,14 +28,19 @@ namespace statwell {
 
 /** @brief Reads cumulative CPU ticks across all processors. */
 [[nodiscard]] Result<CpuTicks> read_cpu_ticks() noexcept;
+
 /** @brief Samples physical memory use and pressure. */
 [[nodiscard]] Result<MemorySample> sample_memory() noexcept;
+
 /** @brief Samples system load averages. */
 [[nodiscard]] Result<LoadSample> sample_load() noexcept;
+
 /** @brief Samples the filesystem containing path. */
 [[nodiscard]] Result<DiskSample> sample_disk(const std::string& path) noexcept;
+
 /** @brief Samples the internal battery, if present. */
 [[nodiscard]] Result<BatterySample> sample_battery() noexcept;
+
 /** @brief Reads cumulative counters for a named, active interface. */
 [[nodiscard]] Result<NetworkCounters> read_network_counters(std::string_view interface_name) noexcept;
 
@@ -56,6 +61,7 @@ class NetworkProbe {
 public:
   /** @brief Selects the interface whose counters will be sampled. */
   explicit NetworkProbe(std::string interface_name);
+
   /** @brief Returns a rate after the first read has established a baseline. */
   [[nodiscard]] Result<NetworkSample> sample() noexcept;
 

@@ -11,6 +11,7 @@
 //===---------------------------------------------------------------------------===//
 
 #include "statwell/probes.hpp"
+#include "statwell/runtime.hpp"
 
 #include <array>
 #include <charconv>
@@ -64,12 +65,20 @@ void help() {
 
 SYNOPSIS
   statwell sample [OPTIONS]
+  statwell snapshot [--runtime-dir PATH] [--disk-path PATH] [--interface NAME]
+  statwell daemon [--runtime-dir PATH] [--disk-path PATH] [--interface NAME]
+                  [--cadence NAME=MS]...
+  statwell watch --metric NAME --event NAME [--runtime-dir PATH]
+                 [--disk-path PATH] [--interface NAME]
   statwell --help | --version
 
 DESCRIPTION
   Read selected metrics once using native operating-system APIs. CPU and
   network rates use two counter reads separated by --interval-ms. Values use
   bytes, bytes per second, percentages, and load averages as named.
+  The daemon publishes an owner-only snapshot for any number of readers.
+  Snapshot falls back to one-shot sampling if the daemon is absent. On macOS,
+  watch follows one metric and sends its fields as a SketchyBar Mach event.
 
 OPTIONS
   --metric NAME       Select a metric; repeat for cpu, memory, load, disk,
@@ -78,6 +87,9 @@ OPTIONS
   --disk-path PATH    Filesystem path to measure. Default: home directory.
   --interface NAME    Network interface to measure; required for network.
   --interval-ms N     Counter interval, 50..5000 ms. Default: 200 ms.
+  --runtime-dir PATH  Private snapshot directory. Default: user runtime dir.
+  --cadence NAME=MS   Daemon probe interval, 100..3600000 ms.
+  --event NAME        SketchyBar event name for watch.
   -h, --help          Show this help.
   --version           Show the program version.
 
@@ -89,12 +101,62 @@ OUTPUT
 EXAMPLES
   statwell sample --metric cpu --metric memory --format json
   statwell sample --metric network --interface en0 --format kv
+  statwell daemon --interface en0 --cadence battery=30000
+  statwell snapshot
+  statwell watch --metric cpu --event statwell_cpu
 
 EXIT STATUS
   0  At least one selected metric was sampled successfully.
   1  No selected metric was sampled successfully.
   2  Invalid command-line arguments.
 )";
+}
+
+struct RuntimeArgs {
+  statwell::RuntimeOptions options;
+  std::string              metric;
+  std::string              event;
+};
+
+bool parse_runtime(int argc, char** argv, RuntimeArgs& parsed) {
+  const char* home         = std::getenv("HOME");
+  parsed.options.disk_path = home != nullptr && *home != '\0' ? home : "/";
+  for (int index = 2; index < argc; ++index) {
+    const std::string_view arg(argv[index]);
+    if (arg == "--help" || arg == "-h") {
+      help();
+      std::exit(0);
+    }
+    if (index + 1 >= argc)
+      return false;
+    const std::string_view value(argv[++index]);
+    if (arg == "--runtime-dir")
+      parsed.options.runtime_dir = value;
+    else if (arg == "--disk-path")
+      parsed.options.disk_path = value;
+    else if (arg == "--interface")
+      parsed.options.interface_name = value;
+    else if (arg == "--metric")
+      parsed.metric = value;
+    else if (arg == "--event")
+      parsed.event = value;
+    else if (arg == "--cadence") {
+      const auto separator = value.find('=');
+      if (separator == std::string_view::npos)
+        return false;
+      const auto name         = value.substr(0, separator);
+      const auto duration     = value.substr(separator + 1);
+      int        milliseconds = 0;
+      const auto [end, error] = std::from_chars(duration.data(), duration.data() + duration.size(), milliseconds);
+      if (error != std::errc{} || end != duration.data() + duration.size() || milliseconds < 100 || milliseconds > 3'600'000)
+        return false;
+      if (name.empty() || name.size() > 64 || name.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-.") != std::string_view::npos)
+        return false;
+      parsed.options.cadence_overrides[std::string(name)] = std::chrono::milliseconds(milliseconds);
+    } else
+      return false;
+  }
+  return true;
 }
 
 bool parse(int argc, char** argv, Options& options) {
@@ -216,8 +278,9 @@ int run(int argc, char** argv) {
     return 2;
   }
 
-  statwell::CpuProbe                                       cpu;
-  statwell::NetworkProbe                                   network(options.interface_name);
+  statwell::CpuProbe     cpu;
+  statwell::NetworkProbe network(options.interface_name);
+
   std::optional<statwell::Result<statwell::CpuSample>>     first_cpu;
   std::optional<statwell::Result<statwell::NetworkSample>> first_network;
   if (options.selected[static_cast<std::size_t>(Metric::cpu)]) {
@@ -299,7 +362,35 @@ int run(int argc, char** argv) {
 
 int main(int argc, char** argv) {
   try {
+    if (argc > 1) {
+      const std::string_view command(argv[1]);
+      if (command == "daemon" || command == "snapshot" || command == "watch") {
+        RuntimeArgs parsed;
+        if (!parse_runtime(argc, argv, parsed)) {
+          std::cerr << "statwell: invalid arguments (see --help)\n";
+          return 2;
+        }
+        if (command == "daemon") {
+          if (!parsed.metric.empty() || !parsed.event.empty())
+            return 2;
+          return statwell::run_daemon(parsed.options);
+        }
+        if (command == "snapshot") {
+          if (!parsed.metric.empty() || !parsed.event.empty())
+            return 2;
+          const auto content = statwell::read_snapshot(parsed.options.runtime_dir);
+          std::cout << (content ? *content : statwell::one_shot_snapshot(parsed.options));
+          return 0;
+        }
+        if (parsed.metric.empty() || parsed.event.empty())
+          return 2;
+        return statwell::run_watch(parsed.options, parsed.metric, parsed.event);
+      }
+    }
     return run(argc, argv);
+  } catch (const std::invalid_argument& error) {
+    std::cerr << "statwell: " << error.what() << '\n';
+    return 2;
   } catch (const std::exception& error) {
     std::cerr << "statwell: " << error.what() << '\n';
     return 1;
