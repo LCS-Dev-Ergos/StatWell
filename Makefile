@@ -74,7 +74,7 @@ format-check:
 	clang-format --dry-run --Werror include/statwell/*.hpp src/*.cpp src/*.hpp src/cli/*.cpp src/platform/*.cpp src/platform/*.hpp tests/*.cpp
 
 tidy: build
-	clang-tidy -p $(BUILD_DIR) src/metrics.cpp src/registry.cpp src/runtime.cpp src/watch.cpp \
+	clang-tidy -p $(BUILD_DIR) src/metrics.cpp src/packages.cpp src/registry.cpp src/runtime.cpp src/watch.cpp \
 		src/platform/linux_parsers.cpp $(PLATFORM_SOURCE) src/cli/main.cpp \
 		tests/metrics_test.cpp tests/linux_parsers_test.cpp
 

@@ -18,6 +18,7 @@
 #include <chrono>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 
@@ -25,9 +26,13 @@ namespace statwell {
 
 /** @brief Runtime settings shared by daemon and one-shot fallback. */
 struct RuntimeOptions {
-  std::string disk_path;
-  std::string interface_name;
-  std::string runtime_dir;
+  std::string               disk_path;
+  std::string               interface_name;
+  std::string               runtime_dir;
+  std::string               homebrew_bin     = "/opt/homebrew/bin/brew";
+  std::string               checkupdates_bin = "/usr/bin/checkupdates";
+  std::chrono::milliseconds package_timeout{10'000};
+  std::set<std::string>     providers;
 
   std::map<std::string, std::chrono::milliseconds> cadence_overrides;
 };

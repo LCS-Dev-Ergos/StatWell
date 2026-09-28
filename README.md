@@ -4,9 +4,9 @@ StatWell is a native C++ system-status library and command-line tool for macOS
 and Linux. Its goal is to sample metrics once and make the same typed data
 available to terminal bars, desktop bars, and other local clients.
 
-The current implementation samples CPU, memory, load, disk, battery, and a
-named network interface on macOS and Linux. A user daemon publishes those
-readings to an owner-only snapshot file. Package-update providers and consumer
+The current implementation samples CPU, memory, load, disk, battery, a
+named network interface, and optional Homebrew or pacman update counts. A user
+daemon publishes those readings to an owner-only snapshot file. Consumer
 integrations are upcoming phases. The one-shot CLI output and shared snapshot
 protocol each have their own version-1 schema.
 
@@ -49,6 +49,8 @@ nix build .#statwell
 ```sh
 statwell sample --metric cpu --metric memory --format json
 statwell sample --metric network --interface en0 --format kv
+statwell sample --metric homebrew --format json
+statwell sample --metric pacman --format kv
 statwell --help
 ```
 
@@ -64,10 +66,23 @@ The JSON and key/value formats both carry `schema_version` or
 error codes are part of their versioned contract. See `statwell --help` for
 options and exit statuses.
 
+Package checks are opt-in. `homebrew` calls `brew outdated --json=v2` and
+reports `total`, `formulae`, and `casks`; `pacman` calls the unprivileged
+`checkupdates --nocolor` and reports `total`. A successful check with no
+updates reports zero; command, timeout, and parse failures report an error.
+Use `--homebrew-bin` or `--checkupdates-bin` to select an absolute executable
+path. The defaults are `/opt/homebrew/bin/brew` and `/usr/bin/checkupdates`;
+other installations should override them. `--package-timeout-ms` sets a
+100–60000 ms deadline (default 10000). No shell or privileged pacman sync is
+used. Homebrew may update its metadata according to its own configuration;
+set `HOMEBREW_NO_AUTO_UPDATE=1` if that is not wanted.
+
 ## Shared daemon and snapshot
 
 ```sh
 statwell daemon --interface en0
+statwell daemon --provider homebrew --cadence homebrew=3600000
+statwell daemon --provider pacman --cadence pacman=3600000
 statwell snapshot
 statwell watch --metric cpu --event statwell_cpu  # macOS SketchyBar
 ```
@@ -77,6 +92,13 @@ cadences are CPU/network 2 s, memory/load 5 s, battery 30 s and disk 60 s.
 Override a cadence with `--cadence NAME=MS` (100 through 3600000 ms), for
 example `--cadence disk=120000`. The network probe needs `--interface NAME`;
 without one it reports an explicit error. `--disk-path` selects a filesystem.
+Package providers run on separate workers and publish only after completion;
+the system metrics continue sampling while a package command is running.
+The default package cadence is one hour. A pending first check is
+`unavailable`; later failures retain the last valid count with an error
+status. Pass `--provider` to `snapshot` to include package checks only when
+the daemon is absent. When it is active, `snapshot` returns the daemon's
+configured metric set.
 The daemon handles SIGINT and SIGTERM, skips missed intervals after sleep, and
 allows only one instance per runtime directory.
 
@@ -99,6 +121,15 @@ per-probe latency on the macOS development host.
 `watch` registers the supplied event name, then sends `status`, timestamps,
 sequence, and all fields in `value` as event variables. SketchyBar consumers
 are migrated in a later phase; the existing widgets are still unchanged.
+For an optional package metric, `watch --metric homebrew` or
+`watch --metric pacman` enables that provider for its one-shot fallback. It
+caches the fallback until the provider cadence expires while checking for a
+daemon every two seconds, so a missing daemon does not rerun a package
+command on each poll.
+
+The command contracts are documented by the
+[Homebrew manual](https://docs.brew.sh/Manpage.html) and the
+[checkupdates manual](https://man.archlinux.org/man/checkupdates.8).
 
 The installed package includes inactive service templates in
 `share/statwell/services/`: `dev.lcs.statwell.plist` on macOS and
@@ -129,6 +160,8 @@ consumer configurations are part of the migration phase.
   fixture tests so malformed records can be checked on either platform.
 - `src/cli/main.cpp`: one-shot CLI and versioned output.
 - `src/registry.cpp`: built-in probe state, serialization and registration.
+- `src/packages.cpp`: bounded, fixed-argument Homebrew and pacman commands,
+  output parsing, deadlines and cancellation.
 - `src/runtime.cpp`: generic cadence scheduling and the private snapshot transport.
 - `src/watch.cpp`: SketchyBar Mach watcher on macOS.
 

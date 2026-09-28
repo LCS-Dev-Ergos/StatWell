@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -106,7 +107,7 @@ struct FieldLookup {
   std::string_view name;
 };
 
-[[nodiscard]] std::string_view field(FieldLookup lookup) {
+[[nodiscard]] std::string_view field(const FieldLookup& lookup) {
   const auto [object, name] = lookup;
   const std::string key     = "\"" + std::string(name) + "\":";
   const auto        start   = object.find(key);
@@ -129,7 +130,7 @@ struct EventInput {
   std::string_view event;
 };
 
-[[nodiscard]] std::vector<std::string> event_arguments(EventInput input) {
+[[nodiscard]] std::vector<std::string> event_arguments(const EventInput& input) {
   const auto [document, metric, event] = input;
   const std::string key                = "\"" + std::string(metric) + "\":{";
   const auto        begin              = document.find(key);
@@ -186,10 +187,14 @@ int run_watch(const RuntimeOptions& options, std::string_view metric, std::strin
   std::cerr << "statwell: SketchyBar Mach watch is available on macOS only\n";
   return 2;
 #else
-  const auto registrations = make_registry(options);
-  if (std::find_if(registrations.begin(), registrations.end(), [metric](const Registration& item) { return item.name == metric; })
-          == registrations.end()
-      || !safe_name(event)) {
+  RuntimeOptions effective      = options;
+  const bool     package_metric = metric == "homebrew" || metric == "pacman";
+  if (package_metric)
+    effective.providers.emplace(metric);
+  const auto registrations = make_registry(effective);
+  const auto selected =
+      std::find_if(registrations.begin(), registrations.end(), [metric](const Registration& item) { return item.name == metric; });
+  if (selected == registrations.end() || !safe_name(event)) {
     std::cerr << "statwell: invalid watch metric or event\n";
     return 2;
   }
@@ -198,12 +203,20 @@ int run_watch(const RuntimeOptions& options, std::string_view metric, std::strin
     std::cerr << "statwell: SketchyBar Mach service is unavailable\n";
     return 1;
   }
-  std::string previous;
+  std::string                previous;
+  std::optional<std::string> fallback;
+  auto                       next_fallback = std::chrono::steady_clock::time_point::min();
   for (;;) {
-    auto       cached    = read_snapshot(options.runtime_dir);
-    const auto document  = cached ? *cached : one_shot_snapshot(options);
-    const auto instance  = field({document, "instance_id"});
-    const auto arguments = event_arguments({document, metric, event});
+    auto cached = read_snapshot(effective.runtime_dir);
+    if (cached)
+      fallback.reset();
+    else if (!fallback || std::chrono::steady_clock::now() >= next_fallback) {
+      fallback      = one_shot_snapshot(effective);
+      next_fallback = std::chrono::steady_clock::now() + (package_metric ? selected->cadence : std::chrono::seconds(2));
+    }
+    const auto& document  = cached ? *cached : *fallback;
+    const auto  instance  = field({document, "instance_id"});
+    const auto  arguments = event_arguments({document, metric, event});
     if (arguments.empty()) {
       std::cerr << "statwell: selected metric is absent from snapshot\n";
       return 1;

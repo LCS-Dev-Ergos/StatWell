@@ -21,7 +21,7 @@ include(CMakePackageConfigHelpers)
 
 # --------------------------------- Probe Library --------------------------------- #
 
-add_library(statwell_core STATIC src/metrics.cpp src/platform/linux_parsers.cpp src/registry.cpp src/runtime.cpp src/watch.cpp)
+add_library(statwell_core STATIC src/metrics.cpp src/packages.cpp src/platform/linux_parsers.cpp src/registry.cpp src/runtime.cpp src/watch.cpp)
 target_compile_features(statwell_core PUBLIC cxx_std_23)
 set_target_properties(statwell_core PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(statwell_core PUBLIC
@@ -100,5 +100,8 @@ if(STATWELL_BUILD_TESTS)
       $<TARGET_FILE:statwell>)
   add_test(NAME statwell_daemon_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/daemon_contract.py
+      $<TARGET_FILE:statwell>)
+  add_test(NAME statwell_packages_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/packages_contract.py
       $<TARGET_FILE:statwell>)
 endif()

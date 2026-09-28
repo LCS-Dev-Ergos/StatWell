@@ -16,15 +16,20 @@ conversation.
   packaging for supported hosts remains in scope.
 - C++23 is the library language level so public probe results can use
   `std::expected`. Phase one built the macOS probe library and one-shot CLI.
-  Phase two adds Linux probes with recorded procfs/sysfs fixtures. The daemon,
-  package-update providers, Home Manager integration, and consumer migration
-  follow in later phases.
+  Phase two added Linux probes with recorded procfs/sysfs fixtures. Phase
+  three added the shared daemon, snapshot protocol, and user-service templates.
+- The user requested the AlgoDataStruct source and CMake style, a Makefile,
+  all build directories under `builds/`, and a root `compile_commands.json`
+  link for VS Code clangd. The workspace settings adapt the Yabai debugger,
+  task, and sanitizer configuration to those project paths.
+- Phase four provides optional Homebrew and pacman update checks with bounded
+  command execution on background workers. The default daemon does not run
+  package commands unless enabled by `--provider`.
 
 ## Open work
 
-- Run the Linux backend on an actual Linux host; fixture tests and compile
-  checks on macOS do not establish Linux runtime behavior.
-- Define and implement the versioned daemon snapshot protocol, sampling
-  schedule, and platform user services.
-- Add Homebrew and pacman providers with bounded execution, then the Home
-  Manager module and staged consumer migrations.
+- Build and run the Linux package on an actual Linux host; macOS fixture
+  tests and derivation evaluation do not establish Linux runtime behavior.
+- Wire the package and user services through Home Manager, then migrate
+  consumers one at a time. Verify the Mach watcher against the real bar at
+  migration time.

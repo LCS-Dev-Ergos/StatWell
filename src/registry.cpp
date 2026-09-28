@@ -12,13 +12,17 @@
 
 #include "registry.hpp"
 
+#include "statwell/packages.hpp"
 #include "statwell/probes.hpp"
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace statwell {
@@ -55,6 +59,12 @@ void render_value(std::ostream& out, const BatterySample& value) {
 void render_value(std::ostream& out, const NetworkSample& value) {
   out << "\"download_bytes_per_second\":" << value.download_bytes_per_second
       << ",\"upload_bytes_per_second\":" << value.upload_bytes_per_second;
+}
+
+void render_value(std::ostream& out, const UpdateSample& value) {
+  out << "\"total\":" << value.total;
+  if (value.has_breakdown)
+    out << ",\"formulae\":" << value.formulae << ",\"casks\":" << value.casks;
 }
 
 template <typename T>
@@ -146,18 +156,86 @@ private:
   NetworkProbe probe_;
 };
 
+class PackageMetric final : public State<UpdateSample> {
+public:
+  PackageMetric(PackageKind kind, std::string executable, std::chrono::milliseconds timeout) :
+      kind_(kind),
+      executable_(std::move(executable)),
+      timeout_(timeout) {}
+
+  void sample() noexcept override {
+    if (worker_.joinable())
+      return;
+    try {
+      worker_ = std::jthread([this](const std::stop_token& stop) {
+        const auto           started = std::chrono::steady_clock::now();
+        Result<UpdateSample> value   = std::unexpected(ProbeError{ErrorCode::system_failure});
+        try {
+          value = sample_updates(kind_, executable_, timeout_, stop);
+        } catch (...) {
+          value = std::unexpected(ProbeError{ErrorCode::system_failure});
+        }
+        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - started).count();
+        std::lock_guard lock(mutex_);
+        completed_          = std::move(value);
+        completed_duration_ = duration;
+      });
+    } catch (...) {
+      observe(std::unexpected(ProbeError{ErrorCode::system_failure}));
+    }
+  }
+
+  bool poll(std::int64_t& duration_us) noexcept override {
+    std::optional<Result<UpdateSample>> value;
+    {
+      std::lock_guard lock(mutex_);
+      if (!completed_)
+        return false;
+      value = std::move(completed_);
+      completed_.reset();
+      duration_us = completed_duration_;
+    }
+    worker_.join();
+    observe(std::move(*value));
+    return true;
+  }
+
+  [[nodiscard]] bool pending() const noexcept override { return worker_.joinable(); }
+
+private:
+  PackageKind                         kind_;
+  std::string                         executable_;
+  std::chrono::milliseconds           timeout_;
+  mutable std::mutex                  mutex_;
+  std::optional<Result<UpdateSample>> completed_;
+  std::int64_t                        completed_duration_ = 0;
+  std::jthread                        worker_;
+};
+
 } // namespace
 
 std::vector<Registration> make_registry(const RuntimeOptions& options) {
   const auto                now = std::chrono::steady_clock::now();
   std::vector<Registration> entries;
-  entries.reserve(6);
+  entries.reserve(6 + options.providers.size());
   entries.push_back({"cpu", std::chrono::seconds(2), std::make_unique<CpuMetric>(), now});
   entries.push_back({"memory", std::chrono::seconds(5), std::make_unique<MemoryMetric>(), now});
   entries.push_back({"load", std::chrono::seconds(5), std::make_unique<LoadMetric>(), now});
   entries.push_back({"disk", std::chrono::seconds(60), std::make_unique<DiskMetric>(options.disk_path), now});
   entries.push_back({"battery", std::chrono::seconds(30), std::make_unique<BatteryMetric>(), now});
   entries.push_back({"network", std::chrono::seconds(2), std::make_unique<NetworkMetric>(options.interface_name), now});
+  for (const auto& provider : options.providers) {
+    if (provider == "homebrew")
+      entries.push_back(
+          {"homebrew", std::chrono::hours(1),
+           std::make_unique<PackageMetric>(PackageKind::homebrew, options.homebrew_bin, options.package_timeout), now});
+    else if (provider == "pacman")
+      entries.push_back(
+          {"pacman", std::chrono::hours(1),
+           std::make_unique<PackageMetric>(PackageKind::pacman, options.checkupdates_bin, options.package_timeout), now});
+    else
+      throw std::invalid_argument("unknown provider: " + provider);
+  }
   for (const auto& [name, cadence] : options.cadence_overrides) {
     bool found = false;
     for (auto& entry : entries)

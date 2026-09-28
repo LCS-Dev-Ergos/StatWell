@@ -110,7 +110,7 @@ struct Publication {
 
 void publish(int dir, const Publication& publication) {
   const auto& [content, instance, sequence] = publication;
-  const std::string temporary = "snapshot." + std::string(instance) + "." + std::to_string(sequence) + ".tmp";
+  const std::string temporary               = "snapshot." + std::string(instance) + "." + std::to_string(sequence) + ".tmp";
   Fd                file(::openat(dir, temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
   if (file.get() < 0)
     fail("create temporary snapshot");
@@ -226,6 +226,8 @@ int run_daemon(const RuntimeOptions& options) {
         item.next        = Clock::now() + item.cadence;
         changed          = true;
       }
+      if (item.source->poll(item.duration_us))
+        changed = true;
     }
     if (changed) {
       ++sequence;
@@ -303,6 +305,17 @@ std::string one_shot_snapshot(const RuntimeOptions& options) {
       item.source->sample();
       item.duration_us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - started).count();
     }
+  }
+  const auto deadline = Clock::now() + options.package_timeout + std::chrono::seconds(1);
+  for (;;) {
+    bool pending = false;
+    for (auto& item : registrations) {
+      item.source->poll(item.duration_us);
+      pending = pending || item.source->pending();
+    }
+    if (!pending || Clock::now() >= deadline)
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
   }
   return snapshot(registrations, instance_id(), 1);
 }

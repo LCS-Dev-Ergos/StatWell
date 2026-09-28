@@ -46,8 +46,9 @@ not count as a running daemon.
 }
 ```
 
-All six metric names are always present: `cpu`, `memory`, `load`, `disk`,
-`battery`, `network`. The example omits five records for brevity.
+The six system metric names are always present: `cpu`, `memory`, `load`,
+`disk`, `battery`, `network`. Optional `homebrew` and `pacman` records appear
+when those providers are enabled. The example omits other records for brevity.
 
 - `instance_id` changes on daemon restart. A one-shot fallback uses a fresh
   instance ID on each invocation.
@@ -61,7 +62,9 @@ All six metric names are always present: `cpu`, `memory`, `load`, `disk`,
   current Unix time is between `value_at_unix_ms` and
   `value_at_unix_ms + max_age_ms`. A future timestamp is stale too.
 - `sample_duration_us` is the most recent probe call's elapsed monotonic time
-  in microseconds; it excludes JSON serialization and file publication.
+  in microseconds; it excludes JSON serialization and file publication. For
+  package providers it covers the background command and parsing after the
+  check completes.
 - `status` is `ok`, `error`, or `unavailable` before the first attempt.
   On failure, `error` is a stable error category and `native_code` is an
   optional OS-specific number. A previous successful `value` remains
@@ -74,6 +77,10 @@ one-, five-, and fifteen-minute averages. Battery has integer `percent`,
 `charging`, and `external_power` booleans. Network rates are bytes per
 second for the selected interface. The stable error categories are
 `unavailable`, `unsupported`, `invalid_input`, and `system_failure`.
+Homebrew has `total`, `formulae`, and `casks` update counts; pacman has
+`total`. A successful zero is distinct from an unavailable or failed check.
+Package checks have a one-hour default cadence and are absent unless enabled
+by the daemon's `--provider` option.
 
 Clients should reject unknown major `schema_version` values. They may
 ignore additional fields in version 1. For a missing or stopped daemon,

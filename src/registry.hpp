@@ -32,6 +32,10 @@ public:
   virtual ~MetricSource()                                                                                   = default;
   virtual void sample() noexcept                                                                            = 0;
   virtual void render(std::ostream& out, std::chrono::milliseconds cadence, std::int64_t duration_us) const = 0;
+
+  virtual bool poll(std::int64_t&) noexcept { return false; }
+
+  [[nodiscard]] virtual bool pending() const noexcept { return false; }
 };
 
 /** @brief A registered probe with its independent monotonic deadline. */

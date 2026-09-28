@@ -10,9 +10,11 @@
  */
 //===---------------------------------------------------------------------------===//
 
+#include "statwell/packages.hpp"
 #include "statwell/probes.hpp"
 #include "statwell/runtime.hpp"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -32,9 +34,9 @@
 
 namespace {
 
-enum class Metric : std::uint8_t { cpu, memory, load, disk, battery, network, count };
-constexpr std::array<std::string_view, static_cast<std::size_t>(Metric::count)> kNames{"cpu",  "memory",  "load",
-                                                                                       "disk", "battery", "network"};
+enum class Metric : std::uint8_t { cpu, memory, load, disk, battery, network, homebrew, pacman, count };
+constexpr std::array<std::string_view, static_cast<std::size_t>(Metric::count)> kNames{"cpu",     "memory",  "load",     "disk",
+                                                                                       "battery", "network", "homebrew", "pacman"};
 
 struct Options {
   std::array<bool, kNames.size()> selected{true, true, true, true, true, false};
@@ -43,7 +45,10 @@ struct Options {
   bool        json             = true;
   std::string disk_path;
   std::string interface_name;
-  int         interval_ms = 200;
+  std::string homebrew_bin       = "/opt/homebrew/bin/brew";
+  std::string checkupdates_bin   = "/usr/bin/checkupdates";
+  int         package_timeout_ms = 10'000;
+  int         interval_ms        = 200;
 };
 
 struct Field {
@@ -66,8 +71,9 @@ void help() {
 SYNOPSIS
   statwell sample [OPTIONS]
   statwell snapshot [--runtime-dir PATH] [--disk-path PATH] [--interface NAME]
+                    [--provider NAME]...
   statwell daemon [--runtime-dir PATH] [--disk-path PATH] [--interface NAME]
-                  [--cadence NAME=MS]...
+                  [--cadence NAME=MS]... [--provider NAME]...
   statwell watch --metric NAME --event NAME [--runtime-dir PATH]
                  [--disk-path PATH] [--interface NAME]
   statwell --help | --version
@@ -82,13 +88,18 @@ DESCRIPTION
 
 OPTIONS
   --metric NAME       Select a metric; repeat for cpu, memory, load, disk,
-                      battery, or network. Default: all except network.
+                      battery, network, homebrew, or pacman. Default: the
+                      five common system metrics.
   --format FORMAT     json (default) or kv. Both formats have version 1.
   --disk-path PATH    Filesystem path to measure. Default: home directory.
   --interface NAME    Network interface to measure; required for network.
   --interval-ms N     Counter interval, 50..5000 ms. Default: 200 ms.
   --runtime-dir PATH  Private snapshot directory. Default: user runtime dir.
   --cadence NAME=MS   Daemon probe interval, 100..3600000 ms.
+  --provider NAME     Enable homebrew or pacman in daemon/snapshot; repeatable.
+  --homebrew-bin PATH Absolute path to brew. Default: /opt/homebrew/bin/brew.
+  --checkupdates-bin PATH  Absolute path to checkupdates.
+  --package-timeout-ms N   Provider deadline, 100..60000 ms. Default: 10000.
   --event NAME        SketchyBar event name for watch.
   -h, --help          Show this help.
   --version           Show the program version.
@@ -102,6 +113,8 @@ EXAMPLES
   statwell sample --metric cpu --metric memory --format json
   statwell sample --metric network --interface en0 --format kv
   statwell daemon --interface en0 --cadence battery=30000
+  statwell daemon --provider homebrew --cadence homebrew=3600000
+  statwell sample --metric pacman --format kv
   statwell snapshot
   statwell watch --metric cpu --event statwell_cpu
 
@@ -136,7 +149,21 @@ bool parse_runtime(int argc, char** argv, RuntimeArgs& parsed) {
       parsed.options.disk_path = value;
     else if (arg == "--interface")
       parsed.options.interface_name = value;
-    else if (arg == "--metric")
+    else if (arg == "--homebrew-bin")
+      parsed.options.homebrew_bin = value;
+    else if (arg == "--checkupdates-bin")
+      parsed.options.checkupdates_bin = value;
+    else if (arg == "--provider") {
+      if (value != "homebrew" && value != "pacman")
+        return false;
+      parsed.options.providers.emplace(value);
+    } else if (arg == "--package-timeout-ms") {
+      int milliseconds        = 0;
+      const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), milliseconds);
+      if (error != std::errc{} || end != value.data() + value.size() || milliseconds < 100 || milliseconds > 60'000)
+        return false;
+      parsed.options.package_timeout = std::chrono::milliseconds(milliseconds);
+    } else if (arg == "--metric")
       parsed.metric = value;
     else if (arg == "--event")
       parsed.event = value;
@@ -198,6 +225,16 @@ bool parse(int argc, char** argv, Options& options) {
       options.disk_path = value;
     } else if (arg == "--interface") {
       options.interface_name = value;
+    } else if (arg == "--homebrew-bin") {
+      options.homebrew_bin = value;
+    } else if (arg == "--checkupdates-bin") {
+      options.checkupdates_bin = value;
+    } else if (arg == "--package-timeout-ms") {
+      int parsed              = 0;
+      const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+      if (error != std::errc{} || end != value.data() + value.size() || parsed < 100 || parsed > 60'000)
+        return false;
+      options.package_timeout_ms = parsed;
     } else if (arg == "--interval-ms") {
       int parsed              = 0;
       const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
@@ -344,6 +381,24 @@ int run(int argc, char** argv) {
       fields.push_back({"upload_bytes_per_second", decimal(sample.upload_bytes_per_second)});
     }));
   }
+  if (options.selected[static_cast<std::size_t>(Metric::homebrew)]) {
+    entries.push_back(entry(
+        "homebrew",
+        statwell::sample_updates(
+            statwell::PackageKind::homebrew, options.homebrew_bin, std::chrono::milliseconds(options.package_timeout_ms)),
+        [](auto& fields, const auto& sample) {
+          fields.push_back({"total", std::to_string(sample.total)});
+          fields.push_back({"formulae", std::to_string(sample.formulae)});
+          fields.push_back({"casks", std::to_string(sample.casks)});
+        }));
+  }
+  if (options.selected[static_cast<std::size_t>(Metric::pacman)]) {
+    entries.push_back(entry(
+        "pacman",
+        statwell::sample_updates(
+            statwell::PackageKind::pacman, options.checkupdates_bin, std::chrono::milliseconds(options.package_timeout_ms)),
+        [](auto& fields, const auto& sample) { fields.push_back({"total", std::to_string(sample.total)}); }));
+  }
 
   const auto now       = std::chrono::system_clock::now();
   const auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
@@ -351,11 +406,7 @@ int run(int argc, char** argv) {
     print_json(entries, timestamp);
   else
     print_kv(entries, timestamp);
-  for (const auto& metric : entries) {
-    if (metric.ok)
-      return 0;
-  }
-  return 1;
+  return std::any_of(entries.begin(), entries.end(), [](const Entry& metric) { return metric.ok; }) ? 0 : 1;
 }
 
 } // namespace
