@@ -1,0 +1,50 @@
+{
+  //===-------------------- VS CODE SETTINGS FOR STATWELL --------------------===//
+
+  //===----- Editor and C++ ---------------------===//
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "editor.rulers": [140],
+  "editor.formatOnSave": false,
+  "editor.trimAutoWhitespace": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // clangd reads the Makefile-managed link in the repository root.
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.autocomplete": "disabled",
+  "C_Cpp.errorSquiggles": "disabled",
+  "C_Cpp.configurationWarnings": "disabled",
+  "clangd.compilationDatabasePath": "${workspaceFolder}",
+  "clangd.fallbackFlags": ["-std=c++23"],
+  "clangd.onConfigChanged": "restart",
+  "clangd.arguments": [
+    "--completion-style=detailed",
+    "--header-insertion=never",
+    "--background-index",
+    "--clang-tidy",
+    "-j=8"
+  ],
+  "clangd.detectExtensionConflicts": true,
+
+  // Makefile tasks own configuration; CMake Tools must keep output in builds/.
+  "cmake.configureOnOpen": false,
+  "cmake.buildDirectory": "${workspaceFolder}/builds/debug",
+  "cmake.generator": "Ninja",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "builds": true
+  },
+  "search.exclude": {
+    "builds": true
+  },
+  "files.associations": {
+    "*.hpp": "cpp",
+    "*.cpp": "cpp"
+  },
+  "debug.internalConsoleOptions": "openOnSessionStart",
+  "lldb.launch.expressions": "native"
+}

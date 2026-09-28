@@ -29,6 +29,12 @@ the repository root for clangd. Run `make compdb PROFILE=debug` to refresh
 that link without compiling, or choose another profile to inspect its flags.
 For a plain CMake build without GoogleTest, configure with
 `-DSTATWELL_BUILD_TESTS=OFF` and a binary directory under `builds/`.
+
+The `.vscode` workspace settings follow the Yabai clangd and CodeLLDB
+workflow. `make build PROFILE=debug` creates the root `compile_commands.json`
+link used by clangd. The build, test, format, and sanitizer tasks invoke the
+Makefile; debugger launches use binaries in `builds/<profile>/`.
+
 The flake exposes `packages.aarch64-darwin.default`, `packages.x86_64-linux.default`,
 and an overlay. A CMake install exports the `StatWell::statwell_core` target
 for other C++ applications. Linux parsers have recorded `/proc` and `/sys`
@@ -90,7 +96,7 @@ sequence numbers, units and recovery. `watch` reads the same snapshot and
 sends a SketchyBar Mach event whenever the selected metric's sequence changes.
 The first [daemon measurements](docs/performance.md) record idle RSS, CPU and
 per-probe latency on the macOS development host.
-It registers the supplied event name, then sends `status`, timestamps,
+`watch` registers the supplied event name, then sends `status`, timestamps,
 sequence, and all fields in `value` as event variables. SketchyBar consumers
 are migrated in a later phase; the existing widgets are still unchanged.
 

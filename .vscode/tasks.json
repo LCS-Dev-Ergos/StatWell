@@ -1,0 +1,82 @@
+{
+  //===--------------------- STATWELL BUILD AND TEST TASKS --------------------===//
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "StatWell: Build Debug",
+      "type": "process",
+      "command": "make",
+      "args": ["build", "PROFILE=debug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "StatWell: Test Debug",
+      "type": "process",
+      "command": "make",
+      "args": ["test", "PROFILE=debug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "StatWell: Build ASan",
+      "type": "process",
+      "command": "make",
+      "args": ["build", "PROFILE=asan"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "StatWell: Test ASan",
+      "type": "process",
+      "command": "make",
+      "args": ["test", "PROFILE=asan"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "StatWell: Build TSan",
+      "type": "process",
+      "command": "make",
+      "args": ["build", "PROFILE=tsan"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "StatWell: Test TSan",
+      "type": "process",
+      "command": "make",
+      "args": ["test", "PROFILE=tsan"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "StatWell: Format Check",
+      "type": "process",
+      "command": "make",
+      "args": ["format-check"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "StatWell: Clang Tidy",
+      "type": "process",
+      "command": "make",
+      "args": ["tidy", "PROFILE=debug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "StatWell: Refresh clangd database",
+      "type": "process",
+      "command": "make",
+      "args": ["compdb", "PROFILE=debug"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

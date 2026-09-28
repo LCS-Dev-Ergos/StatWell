@@ -1,0 +1,57 @@
+{
+  //===---------------------- STATWELL LLDB LAUNCHES -------------------------===//
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "StatWell: Sample",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/builds/debug/statwell",
+      "args": ["sample", "--metric", "cpu", "--metric", "memory", "--format", "json"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "StatWell: Build Debug"
+    },
+    {
+      "name": "StatWell: Daemon",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/builds/debug/statwell",
+      "args": ["daemon", "--runtime-dir", "/tmp/statwell-vscode-${env:USER}"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "StatWell: Build Debug"
+    },
+    {
+      "name": "StatWell: Daemon ASan",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/builds/asan/statwell",
+      "args": ["daemon", "--runtime-dir", "/tmp/statwell-vscode-${env:USER}"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "StatWell: Build ASan",
+      "envFile": "${workspaceFolder}/.vscode/sanitizers.env"
+    },
+    {
+      "name": "StatWell: Daemon TSan",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/builds/tsan/statwell",
+      "args": ["daemon", "--runtime-dir", "/tmp/statwell-vscode-${env:USER}"],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "StatWell: Build TSan",
+      "envFile": "${workspaceFolder}/.vscode/thread_sanitizer.env"
+    },
+    {
+      "name": "StatWell: Unit Tests",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/builds/debug/statwell_tests",
+      "cwd": "${workspaceFolder}",
+      "terminal": "console",
+      "preLaunchTask": "StatWell: Build Debug"
+    }
+  ]
+}
