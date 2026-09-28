@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - lcs-code/**
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux build and runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate flake
+        run: nix flake check --no-build
+      - name: Build package and Home Manager activation
+        run: |
+          nix build .#statwell --no-link
+          nix build .#checks.x86_64-linux.home-manager --no-link
+      - name: Test Linux probes, CLI, daemon, and package providers
+        run: nix develop .#ci --command make test PROFILE=debug
+      - name: Test with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: nix develop .#ci --command make test PROFILE=asan
+      - name: Test with GCC
+        run: nix develop .#ci --command make test PROFILE=gcc
+
+  macos:
+    name: macOS package and Home Manager
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build package and Home Manager activation
+        run: |
+          nix build .#statwell --no-link
+          nix build .#checks.aarch64-darwin.home-manager --no-link

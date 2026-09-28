@@ -52,6 +52,13 @@ private:
   int value_;
 };
 
+struct DirectoryCloser {
+  void operator()(DIR* directory) const noexcept {
+    if (directory != nullptr)
+      closedir(directory);
+  }
+};
+
 [[nodiscard]] Result<std::string_view> read_file(const char* path, std::span<char> buffer) noexcept {
   FileDescriptor file(open(path, O_RDONLY | O_CLOEXEC));
   if (file.get() < 0)
@@ -130,7 +137,7 @@ Result<BatterySample> sample_battery() noexcept {
     const auto code = errno == ENOENT ? ErrorCode::unsupported : ErrorCode::system_failure;
     return std::unexpected(ProbeError{code, errno});
   }
-  const std::unique_ptr<DIR, decltype(&closedir)> directory(raw, closedir);
+  const std::unique_ptr<DIR, DirectoryCloser> directory(raw);
 
   char       battery_name[256]{};
   bool       external_power = false;
