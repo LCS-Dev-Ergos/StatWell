@@ -1,0 +1,44 @@
+"""Check the public one-shot output and error contract through the executable."""
+
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+binary = sys.argv[1]
+
+
+def run(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([binary, "sample", *args], capture_output=True, text=True)
+
+
+sample = run("--metric", "disk", "--disk-path", "/", "--format", "json")
+assert sample.returncode == 0, sample.stderr
+payload = json.loads(sample.stdout)
+assert payload["schema_version"] == 1
+assert isinstance(payload["captured_at_unix_ms"], int)
+assert list(payload["metrics"]) == ["disk"]
+assert payload["metrics"]["disk"]["status"] == "ok"
+assert payload["metrics"]["disk"]["total_bytes"] > 0
+
+kv = run("--metric", "disk", "--disk-path", "/", "--format", "kv")
+assert kv.returncode == 0, kv.stderr
+lines = dict(line.split("=", 1) for line in kv.stdout.splitlines())
+assert lines["schema.version"] == "1"
+assert lines["disk.status"] == "ok"
+assert int(lines["disk.available_bytes"]) >= 0
+
+with tempfile.TemporaryDirectory() as temporary:
+    missing = str(Path(temporary) / "missing")
+    failed = run("--metric", "disk", "--disk-path", missing)
+    assert failed.returncode == 1
+    error = json.loads(failed.stdout)["metrics"]["disk"]
+    assert error["status"] == "error"
+    assert error["error"] == "system_failure"
+    assert "available_bytes" not in error
+
+invalid = run("--metric", "network")
+assert invalid.returncode == 2
+assert "invalid arguments" in invalid.stderr
