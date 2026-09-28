@@ -6,10 +6,9 @@ document when the audit runs; the checklist is a plan, not a completed audit.
 
 ## Audit progress, 2026-09-28
 
-The audit is in progress on `LCSMacBookPro.local` (aarch64 macOS). The Linux
-CI from phase five passed before the audit changes, but a fresh Linux run and
-the real `lcs-legion-arch` Home Manager switch are still required. No stable
-release has been tagged.
+The audit is in progress on `LCSMacBookPro.local` (aarch64 macOS). The changed
+revision also passed Linux CI on Ubuntu 24.04. The real `lcs-legion-arch`
+Home Manager switch is still required. No stable release has been tagged.
 
 ### Security and correctness evidence
 
@@ -45,8 +44,12 @@ release has been tagged.
   reported no findings in `src` or `include`.
 - `nix flake check --all-systems --no-build` evaluated macOS and Linux
   packages and Home Manager checks. `nix build .#statwell --no-link` built the
-  changed macOS package with Nix's pinned Clang 21. These results do not
-  replace a Linux build of the changed revision.
+  changed macOS package with Nix's pinned Clang 21. GitHub Actions runs
+  [36470519122](https://github.com/LCS-Dev-Ergos/StatWell/actions/runs/36470519122)
+  and [36470577779](https://github.com/LCS-Dev-Ergos/StatWell/actions/runs/36470577779)
+  passed the Ubuntu package and Home Manager builds plus Clang Debug,
+  ASan/UBSan, and GCC runtime tests; their macOS package and Home Manager
+  jobs passed too. These hosted results do not verify the Arch deployment.
 
 ### Performance evidence
 
@@ -84,8 +87,8 @@ provider isolation evidence.
 - **Fixed in Dotfiles:** Kitty now kills an in-flight one-shot fallback as
   soon as the daemon's valid snapshot reappears; a running-process regression
   test verifies the cleanup.
-- **Still required:** Re-run Linux CI on the changed StatWell revision; build,
-  switch, and visually verify the `lcs-legion-arch` Home Manager generation;
+- **Still required:** Build, switch, and visually verify the
+  `lcs-legion-arch` Home Manager generation;
   build and activate Dotfiles after pinning the corrected StatWell revision;
   and compare performance on the real Linux host. Direct snapshot publication
   latency and long-duration sleep/wake behavior have not yet been measured.
