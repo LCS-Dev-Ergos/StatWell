@@ -12,9 +12,12 @@
 
 #include "registry.hpp"
 #include "statwell/runtime.hpp"
+#include "watch_state.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -175,9 +178,35 @@ struct EventInput {
   }
   return arguments;
 }
+
+[[nodiscard]] std::int64_t argument_number(const std::vector<std::string>& arguments, std::string_view name) {
+  for (const auto& argument : arguments) {
+    if (!argument.starts_with(name) || argument.size() <= name.size() || argument[name.size()] != '=')
+      continue;
+    const auto   value      = std::string_view(argument).substr(name.size() + 1);
+    std::int64_t parsed     = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error == std::errc{} && end == value.data() + value.size())
+      return parsed;
+  }
+  return 0;
+}
 #endif
 
 } // namespace
+
+namespace detail {
+
+std::string event_identity(
+    std::string_view instance, std::string_view sequence, std::int64_t value_at_ms, std::int64_t max_age_ms, std::int64_t now_ms) {
+  // Lua's os.time() has one-second precision. Wait that extra second so the
+  // consumer is certain to mark the last value stale when this event arrives.
+  const bool expired = value_at_ms > 0 && max_age_ms > 0 && now_ms >= value_at_ms && now_ms - value_at_ms > max_age_ms
+                       && now_ms - value_at_ms - max_age_ms >= 1'000;
+  return std::string(instance) + ':' + std::string(sequence) + (expired ? ":expired" : ":current");
+}
+
+} // namespace detail
 
 int run_watch(const RuntimeOptions& options, std::string_view metric, std::string_view event) {
 #ifndef __APPLE__
@@ -223,7 +252,10 @@ int run_watch(const RuntimeOptions& options, std::string_view metric, std::strin
     }
     const auto sequence =
         std::find_if(arguments.begin(), arguments.end(), [](const std::string& argument) { return argument.starts_with("sequence="); });
-    const std::string identity = std::string(instance) + ':' + (sequence == arguments.end() ? "" : *sequence);
+    const auto value_at = argument_number(arguments, "value_at_unix_ms");
+    const auto max_age  = argument_number(arguments, "max_age_ms");
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const std::string identity = detail::event_identity(instance, sequence == arguments.end() ? "" : *sequence, value_at, max_age, now_ms);
     if (identity != previous) {
       if (!port.send(arguments)) {
         std::cerr << "statwell: unable to deliver SketchyBar event\n";
