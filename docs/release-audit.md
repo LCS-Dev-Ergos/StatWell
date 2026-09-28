@@ -87,6 +87,9 @@ provider isolation evidence.
 - **Fixed in Dotfiles:** Kitty now kills an in-flight one-shot fallback as
   soon as the daemon's valid snapshot reappears; a running-process regression
   test verifies the cleanup.
+- **Fixed in this audit branch:** The GitHub Actions workflow now pins
+  checkout and the Nix installer to the commit IDs resolved from their
+  release tags, retaining read-only repository permissions.
 - **Still required:** Build, switch, and visually verify the
   `lcs-legion-arch` Home Manager generation;
   build and activate Dotfiles after pinning the corrected StatWell revision;
