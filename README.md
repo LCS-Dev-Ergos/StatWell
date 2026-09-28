@@ -36,13 +36,54 @@ link used by clangd. The build, test, format, and sanitizer tasks invoke the
 Makefile; debugger launches use binaries in `builds/<profile>/`.
 
 The flake exposes `packages.aarch64-darwin.default`, `packages.x86_64-linux.default`,
-and an overlay. A CMake install exports the `StatWell::statwell_core` target
-for other C++ applications. Linux parsers have recorded `/proc` and `/sys`
-fixtures and compile checks; a real Linux runtime check is still pending.
+an overlay, a Home Manager module, and a CI development shell. A CMake install
+exports the `StatWell::statwell_core` target for other C++ applications.
+Linux parsers have recorded `/proc` and `/sys` fixtures; GitHub Actions runs
+the CLI, daemon, and provider contracts on a real Linux runner.
 
 ```sh
 nix build .#statwell
 ```
+
+## Home Manager
+
+Add the StatWell flake as an input to a Home Manager configuration and import
+`statwell.homeManagerModules.default` in the user's module list. For example:
+
+```nix
+{
+  inputs.statwell.url = "github:LCS-Dev-Ergos/StatWell";
+  inputs.statwell.inputs.nixpkgs.follows = "nixpkgs";
+}
+
+# In a Home Manager module, with inputs passed through extraSpecialArgs:
+{ inputs, ... }:
+{
+  imports = [ inputs.statwell.homeManagerModules.default ];
+  services.statwell = {
+    enable = true;
+    networkInterface = "en0";
+    providers = [ "homebrew" ];
+    cadences.homebrew = 3600000;
+  };
+}
+```
+
+The module installs the CLI and configures a launchd user agent on macOS or
+a systemd user service on Linux. Enabling it starts the daemon on the next
+Home Manager activation. Set `networkInterface` for network rates; the
+other metrics work without it. `diskPath`, `runtimeDir`, `cadences`, and
+`packageTimeoutMs` map to the daemon options. Package checks are opt-in via
+`providers = [ "homebrew" ]` or `providers = [ "pacman" ]`; use
+`homebrewBin` or `checkupdatesBin` for nonstandard executable paths. The
+Homebrew daemon defaults to `HOMEBREW_NO_AUTO_UPDATE=1`. The module does not
+provide a Nix package-update check.
+
+The flake checks build sample Home Manager generations for both platforms
+without activating either service. The [CI workflow](.github/workflows/ci.yml)
+builds those generations and packages on macOS and Linux. Linux CI also runs
+`make test` with Clang, sanitizers, and GCC; all build directories stay under
+`builds/`.
 
 ## One-shot sampling
 
@@ -136,8 +177,8 @@ The installed package includes inactive service templates in
 `statwell.service` on Linux. Their executable path is filled in by CMake at
 install time. Copy the appropriate template to `~/Library/LaunchAgents/` or
 `~/.config/systemd/user/`, adjust `--interface` for network sampling, then
-load or enable it as a user service. The upcoming Home Manager module will
-manage that wiring. Installing the package alone does not start a service.
+load or enable it as a user service. Home Manager can manage this wiring
+instead. Installing the package alone does not start a service.
 
 Other clients can read the JSON without talking to the daemon. For example,
 Kitty can use Python's `json.load(open(path))` to read `snapshot.json` without
@@ -178,12 +219,12 @@ PSI `some avg10` value maps to normal below 1%, warning from 1% to below
 ## Roadmap
 
 1. Complete and harden the macOS probe library and CLI.
-2. Validate the Linux probes on a real Linux host; their recorded `/proc` and
-   `/sys` fixtures already cover parsing and malformed input.
+2. Validate the Linux probes on a real Linux host and keep their recorded
+   `/proc` and `/sys` parser fixtures.
 3. Add the shared daemon, versioned snapshot protocol, launchd and systemd
    user services, and a SketchyBar Mach watcher.
 4. Add independent, timeout-bound Homebrew and pacman update providers.
-5. Add the Home Manager module and finish Nix packaging.
+5. Add the Home Manager module, finish Nix packaging, and run host-native CI.
 6. Migrate SketchyBar and Kitty one consumer at a time, retaining a tested
    rollback path until the replacements are verified on the real surfaces.
 

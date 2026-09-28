@@ -25,11 +25,13 @@ conversation.
 - Phase four provides optional Homebrew and pacman update checks with bounded
   command execution on background workers. The default daemon does not run
   package commands unless enabled by `--provider`.
+- Phase five adds an opt-in Home Manager user service for macOS and Linux and
+  GitHub Actions checks for host-native packaging and Linux runtime contracts.
+  It does not add the deferred Nix package-update provider or activate either
+  user's existing service configuration.
 
 ## Open work
 
-- Build and run the Linux package on an actual Linux host; macOS fixture
-  tests and derivation evaluation do not establish Linux runtime behavior.
-- Wire the package and user services through Home Manager, then migrate
+- Confirm the GitHub Actions jobs complete on Linux and macOS, then migrate
   consumers one at a time. Verify the Mach watcher against the real bar at
   migration time.
