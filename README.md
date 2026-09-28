@@ -12,21 +12,21 @@ output below is version 1; it is not yet the daemon snapshot protocol.
 
 ## Build
 
-Requirements: CMake 3.25+, a C++23 compiler, and GoogleTest when building
-tests. An out-of-source CMake build works without Nix:
+Requirements: CMake 3.25+, Ninja, a C++23 compiler, and GoogleTest when
+building tests. The Makefile keeps all local build output in `builds/`:
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+make test
+make run ARGS='--metric cpu --format json'
+make test PROFILE=asan
 ```
 
-Use `-DSTATWELL_BUILD_TESTS=OFF` when GoogleTest is not installed.
-For a compiler whose C++ ABI differs from an installed GoogleTest binary,
-pass `-DSTATWELL_GTEST_SOURCE_DIR=/path/to/pinned/googletest` to build its
-tests with that compiler. The flake
-exposes `packages.aarch64-darwin.default`, `packages.x86_64-linux.default`,
+Use `make help` for the profile and toolchain options. For a compiler whose
+C++ ABI differs from an installed GoogleTest binary, set
+`GTEST_SOURCE_DIR=/path/to/googletest` to compile the tests with that compiler.
+For a plain CMake build without GoogleTest, configure with
+`-DSTATWELL_BUILD_TESTS=OFF` and a binary directory under `builds/`.
+The flake exposes `packages.aarch64-darwin.default`, `packages.x86_64-linux.default`,
 and an overlay. A CMake install exports the `StatWell::statwell_core` target
 for other C++ applications. Linux currently builds the CLI but returns `unsupported` for
 all probes; it is not a functional Linux release yet.

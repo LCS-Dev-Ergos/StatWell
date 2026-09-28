@@ -1,3 +1,4 @@
-Checks: '-*,bugprone-*,clang-analyzer-*,performance-*,portability-*'
+# AlgoDataStruct headers pair pragma once with a conventional include guard.
+Checks: '-*,bugprone-*,clang-analyzer-*,performance-*,portability-*,-portability-avoid-pragma-once'
 WarningsAsErrors: '*'
 HeaderFilterRegex: '^(.*[/\\])?statwell[/\\].*'

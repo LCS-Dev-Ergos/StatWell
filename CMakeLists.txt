@@ -1,11 +1,25 @@
+# ================================================================================= #
+# ----------------------- StatWell: Build and Package Setup ----------------------- #
+# ================================================================================= #
+#
+# Builds the probe library and CLI from one platform backend. Tests are optional;
+# downstream CMake consumers use the exported StatWell::statwell_core target.
+# Use `make help` for the local build commands and their builds/ locations.
+#
+# ================================================================================= #
+
 cmake_minimum_required(VERSION 3.25)
 project(StatWell VERSION 0.1.0 LANGUAGES CXX)
+
+# -------------------------------- Project Options -------------------------------- #
 
 option(STATWELL_BUILD_TESTS "Build StatWell tests" ON)
 set(STATWELL_GTEST_SOURCE_DIR "" CACHE PATH
   "GoogleTest source checkout to build with the selected compiler")
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+
+# --------------------------------- Probe Library --------------------------------- #
 
 add_library(statwell_core STATIC src/metrics.cpp)
 target_compile_features(statwell_core PUBLIC cxx_std_23)
@@ -25,11 +39,16 @@ else()
   message(FATAL_ERROR "StatWell currently supports macOS and Linux only")
 endif()
 
+# --------------------------------- One-Shot CLI ---------------------------------- #
+
 add_executable(statwell src/cli/main.cpp)
 set_target_properties(statwell PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(statwell PRIVATE statwell_core)
 target_compile_definitions(statwell PRIVATE STATWELL_VERSION="${PROJECT_VERSION}")
 target_compile_options(statwell PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+# -------------------------------- Install Package -------------------------------- #
+
 install(TARGETS statwell_core statwell EXPORT StatWellTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -45,6 +64,8 @@ write_basic_package_version_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/StatWellConfig.cmake
   ${CMAKE_CURRENT_BINARY_DIR}/StatWellConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/StatWell)
+
+# --------------------------------- Verification ---------------------------------- #
 
 if(STATWELL_BUILD_TESTS)
   include(CTest)
