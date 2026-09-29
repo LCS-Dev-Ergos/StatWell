@@ -75,9 +75,12 @@ private:
 }
 
 [[nodiscard]] Fd open_private_dir(std::string_view path, bool create) {
-  const std::string name(path);
-  if (name.empty() || name.front() != '/')
+  std::string name(path);
+  if (name.empty() || name.front() != '/' || name.find('\0') != std::string::npos)
     throw std::runtime_error("runtime directory must be an absolute path");
+  // A trailing slash would make open resolve a final symlink before O_NOFOLLOW.
+  while (name.size() > 1 && name.back() == '/')
+    name.pop_back();
   if (create && ::mkdir(name.c_str(), 0700) != 0 && errno != EEXIST)
     fail("create runtime directory");
   Fd dir(::open(name.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
@@ -202,13 +205,14 @@ int run_daemon(const RuntimeOptions& options) {
   SignalHandlers handlers;
   const auto     directory = options.runtime_dir.empty() ? default_runtime_dir() : options.runtime_dir;
   Fd             dir       = open_private_dir(directory, true);
-  Fd             lock(::openat(dir.get(), "daemon.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600));
+  Fd             lock(::openat(dir.get(), "daemon.lock", O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600));
   if (lock.get() < 0)
     fail("open daemon lock");
   struct stat lock_metadata{};
   if (::fstat(lock.get(), &lock_metadata) != 0)
     fail("stat daemon lock");
-  if (!S_ISREG(lock_metadata.st_mode) || lock_metadata.st_uid != ::geteuid() || ::fchmod(lock.get(), 0600) != 0)
+  if (!S_ISREG(lock_metadata.st_mode) || lock_metadata.st_uid != ::geteuid() || lock_metadata.st_nlink != 1
+      || ::fchmod(lock.get(), 0600) != 0)
     throw std::runtime_error("daemon lock must be owned by this user and mode 0600");
   if (::flock(lock.get(), LOCK_EX | LOCK_NB) != 0)
     fail("lock daemon instance");
@@ -248,7 +252,7 @@ std::optional<std::string> read_snapshot(std::string_view runtime_dir) {
   if (::access(directory.c_str(), F_OK) != 0 && errno == ENOENT)
     return std::nullopt;
   Fd dir = open_private_dir(directory, false);
-  Fd lock(::openat(dir.get(), "daemon.lock", O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+  Fd lock(::openat(dir.get(), "daemon.lock", O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
   if (lock.get() < 0 && errno == ENOENT)
     return std::nullopt;
   if (lock.get() < 0)
@@ -256,7 +260,7 @@ std::optional<std::string> read_snapshot(std::string_view runtime_dir) {
   struct stat lock_metadata{};
   if (::fstat(lock.get(), &lock_metadata) != 0)
     fail("stat daemon lock");
-  if (!S_ISREG(lock_metadata.st_mode) || lock_metadata.st_uid != ::geteuid()
+  if (!S_ISREG(lock_metadata.st_mode) || lock_metadata.st_uid != ::geteuid() || lock_metadata.st_nlink != 1
       || (static_cast<unsigned int>(lock_metadata.st_mode) & 0777U) != 0600U)
     throw std::runtime_error("daemon lock must be an owner-only regular file");
   if (::flock(lock.get(), LOCK_EX | LOCK_NB) == 0) {
@@ -265,7 +269,7 @@ std::optional<std::string> read_snapshot(std::string_view runtime_dir) {
   }
   if (errno != EWOULDBLOCK)
     fail("check daemon lock");
-  Fd file(::openat(dir.get(), "snapshot.json", O_RDONLY | O_NOFOLLOW | O_CLOEXEC));
+  Fd file(::openat(dir.get(), "snapshot.json", O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
   if (file.get() < 0 && errno == ENOENT)
     return std::nullopt;
   if (file.get() < 0)

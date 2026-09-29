@@ -203,7 +203,8 @@ std::string event_identity(
   // consumer is certain to mark the last value stale when this event arrives.
   const bool expired = value_at_ms > 0 && max_age_ms > 0 && now_ms >= value_at_ms && now_ms - value_at_ms > max_age_ms
                        && now_ms - value_at_ms - max_age_ms >= 1'000;
-  return std::string(instance) + ':' + std::string(sequence) + (expired ? ":expired" : ":current");
+  const bool future  = value_at_ms > 0 && max_age_ms > 0 && now_ms < value_at_ms;
+  return std::string(instance) + ':' + std::string(sequence) + (future ? ":future" : expired ? ":expired" : ":current");
 }
 
 } // namespace detail
