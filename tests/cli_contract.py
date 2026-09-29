@@ -14,6 +14,16 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run([binary, "sample", *args], capture_output=True, text=True)
 
 
+help_result = subprocess.run([binary, "--help"], capture_output=True, text=True)
+assert help_result.returncode == 0, help_result.stderr
+for command in ("sample", "snapshot", "daemon", "watch"):
+    assert f"  {command}" in help_result.stdout
+for heading in ("SAMPLE OPTIONS", "SERVICE OPTIONS", "SHARED OPTIONS", "OUTPUT AND EXIT STATUS"):
+    assert heading in help_result.stdout
+assert "--interface en0" in help_result.stdout
+assert max(map(len, help_result.stdout.splitlines())) <= 88
+
+
 sample = run("--metric", "disk", "--disk-path", "/", "--format", "json")
 assert sample.returncode == 0, sample.stderr
 payload = json.loads(sample.stdout)

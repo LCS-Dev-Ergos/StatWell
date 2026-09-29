@@ -240,8 +240,12 @@ int run_watch(const RuntimeOptions& options, std::string_view metric, std::strin
     if (cached)
       fallback.reset();
     else if (!fallback || std::chrono::steady_clock::now() >= next_fallback) {
-      fallback      = one_shot_snapshot(effective);
-      next_fallback = std::chrono::steady_clock::now() + (package_metric ? selected->cadence : std::chrono::seconds(2));
+      fallback          = one_shot_snapshot(effective);
+      const auto fields = event_arguments({*fallback, metric, event});
+      const bool valid  = std::find(fields.begin(), fields.end(), "status=ok") != fields.end();
+      // A failed package check must not remain cached for the full hourly cadence.
+      next_fallback = std::chrono::steady_clock::now()
+                      + (package_metric ? (valid ? selected->cadence : std::chrono::seconds(30)) : std::chrono::seconds(2));
     }
     const auto& document  = cached ? *cached : *fallback;
     const auto  instance  = field({document, "instance_id"});

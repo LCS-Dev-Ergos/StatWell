@@ -180,7 +180,8 @@ in
 
     launchd.agents.statwell = mkIf pkgs.stdenv.hostPlatform.isDarwin {
       enable = true;
-      domain = "user";
+      # Home Manager's gui domain loads at the user's graphical login.
+      domain = "gui";
       config = {
         ProgramArguments = [ executable ] ++ daemonArgs;
         EnvironmentVariables = lib.optionalAttrs noAutoUpdate {
