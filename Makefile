@@ -76,7 +76,7 @@ format-check:
 tidy: build
 	clang-tidy -p $(BUILD_DIR) src/metrics.cpp src/packages.cpp src/registry.cpp src/runtime.cpp src/watch.cpp \
 		src/platform/linux_parsers.cpp $(PLATFORM_SOURCE) src/cli/main.cpp \
-		tests/metrics_test.cpp tests/linux_parsers_test.cpp tests/watch_test.cpp
+		tests/metrics_test.cpp tests/linux_parsers_test.cpp tests/watch_test.cpp tests/probes_test.cpp
 
 nix-build:
 	nix build .#statwell --no-link

@@ -2,7 +2,9 @@
 """Exercise package command parsing, deadlines, and daemon isolation."""
 
 import json
+import os
 from pathlib import Path
+import resource
 import signal
 import subprocess
 import sys
@@ -65,6 +67,53 @@ print(json.dumps({'formulae': [{'name': 'a', 'nested': {'key': [1, 2]}}],
         assert result.returncode == 0
         assert metric(result, "homebrew")["total"] == 0
 
+        # Closing stdout before process exit must wait without a POLLHUP spin.
+        closed_output = executable(root, "closed-output", """
+import os, time
+os.write(1, b'{"formulae":[],"casks":[]}')
+os.close(1)
+time.sleep(0.8)
+""")
+        before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        result = invoke(binary, "homebrew", closed_output, timeout=2000)
+        after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        assert result.returncode == 0, result.stderr
+        cpu_seconds = after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime
+        assert cpu_seconds < 0.5, f"closed stdout caused a busy wait: {cpu_seconds:.3f}s CPU"
+
+        # The pipe must work when the caller has an unused standard descriptor.
+        for descriptor in (0, 1, 2):
+            result = subprocess.run(
+                [binary, "sample", "--metric", "homebrew", "--homebrew-bin", empty_brew],
+                capture_output=True, text=True, timeout=5,
+                preexec_fn=lambda descriptor=descriptor: os.close(descriptor),
+            )
+            assert result.returncode == 0, (descriptor, result.stderr)
+
+        # Concurrent workers must not inherit each other's pipe endpoints.
+        inspect_body = """
+import os
+for descriptor in range(3, 64):
+    try:
+        os.fstat(descriptor)
+    except OSError:
+        continue
+    raise SystemExit(1)
+"""
+        inspected_brew = executable(root, "inspected-brew", inspect_body + 'print(\'{"formulae":[],"casks":[]}\')\n')
+        inspected_pacman = executable(root, "inspected-pacman", inspect_body + 'raise SystemExit(2)\n')
+        for _ in range(3):
+            result = subprocess.run(
+                [binary, "snapshot", "--runtime-dir", str(root / "isolated"),
+                 "--provider", "homebrew", "--provider", "pacman",
+                 "--homebrew-bin", inspected_brew, "--checkupdates-bin", inspected_pacman],
+                capture_output=True, text=True, timeout=5,
+            )
+            assert result.returncode == 0, result.stderr
+            readings = json.loads(result.stdout)["metrics"]
+            for name in ("homebrew", "pacman"):
+                assert readings[name]["status"] == "ok", readings[name]
+
         malformed = executable(root, "malformed", "print('{\"formulae\":[],\"casks\":[1]}')\n")
         result = invoke(binary, "homebrew", malformed)
         assert result.returncode == 1
@@ -84,6 +133,12 @@ print('pacman 7 -> 8')
         result = invoke(binary, "pacman", updates)
         assert result.returncode == 0
         assert metric(result, "pacman")["total"] == 2
+
+        for output in ("database sync pending", "pkg old => new", "pkg old ->", "pkg old -> new extra", "pkg old -> new\x1b"):
+            malformed_pacman = executable(root, "malformed-pacman", f"print({output!r})\n")
+            result = invoke(binary, "pacman", malformed_pacman)
+            assert result.returncode == 1, result.stdout
+            assert metric(result, "pacman")["error"] == "invalid_input"
 
         no_updates = executable(root, "no-updates", "import sys\nsys.exit(2)\n")
         result = invoke(binary, "pacman", no_updates)

@@ -51,3 +51,7 @@ jobs:
         run: |
           nix build .#statwell --no-link
           nix build .#checks.aarch64-darwin.home-manager --no-link
+      - name: Test macOS probes, CLI, daemon, and package providers
+        run: nix develop .#ci --command make test PROFILE=debug
+      - name: Test with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: nix develop .#ci --command make test PROFILE=asan

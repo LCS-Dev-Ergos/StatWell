@@ -21,7 +21,7 @@
 
 namespace statwell::detail {
 
-/** @brief Change identity once more when an unchanged value has expired. */
+/** @brief Change identity when an unchanged value expires or becomes future-dated. */
 [[nodiscard]] std::string event_identity(
     std::string_view instance, std::string_view sequence, std::int64_t value_at_ms, std::int64_t max_age_ms, std::int64_t now_ms);
 

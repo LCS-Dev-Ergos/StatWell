@@ -94,8 +94,9 @@ standalone executable and does not claim app attribution.
 
 The flake checks build sample Home Manager generations for both platforms
 without activating either service. The [CI workflow](.github/workflows/ci.yml)
-builds those generations and packages on macOS and Linux. Linux CI also runs
-`make test` with Clang, sanitizers, and GCC; all build directories stay under
+builds those generations and packages on macOS and Linux. Both jobs run
+`make test` with Clang and ASan/UBSan; Linux also runs GCC. All build
+directories stay under
 `builds/`.
 
 ## One-shot sampling
@@ -173,13 +174,14 @@ sends a SketchyBar Mach event whenever the selected metric's sequence changes.
 The first [daemon measurements](docs/performance.md) record idle RSS, CPU and
 per-probe latency on the macOS development host.
 `watch` registers the supplied event name, then sends `status`, timestamps,
-sequence, and all fields in `value` as event variables. SketchyBar consumers
-are migrated in a later phase; the existing widgets are still unchanged.
+sequence, and all fields in `value` as event variables. Consumer configuration,
+activation, and rollback are maintained in Dotfiles; the physical Linux host
+still requires its own deployment checks.
 For an optional package metric, `watch --metric homebrew` or
 `watch --metric pacman` enables that provider for its one-shot fallback. It
-caches the fallback until the provider cadence expires while checking for a
-daemon every two seconds, so a missing daemon does not rerun a package
-command on each poll.
+caches a successful fallback until the provider cadence expires while checking
+for a daemon every two seconds. A failed package fallback retries after
+30 seconds.
 
 The command contracts are documented by the
 [Homebrew manual](https://docs.brew.sh/Manpage.html) and the
@@ -188,7 +190,8 @@ The command contracts are documented by the
 The installed package includes inactive service templates in
 `share/statwell/services/`: `dev.lcs.statwell.plist` on macOS and
 `statwell.service` on Linux. Their executable path is filled in by CMake at
-install time. Copy the appropriate template to `~/Library/LaunchAgents/` or
+configuration time using `CMAKE_INSTALL_PREFIX`. Copy the template to
+`~/Library/LaunchAgents/` or
 `~/.config/systemd/user/`, adjust `--interface` for network sampling, then
 load or enable it as a user service. Home Manager can manage this wiring
 instead. Installing the package alone does not start a service.

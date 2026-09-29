@@ -4,6 +4,29 @@ This is a required gate after consumer migration and before project closure
 or the first stable release. Record evidence and unresolved findings in this
 document when the audit runs; the checklist is a plan, not a completed audit.
 
+## Renewed audit, 2026-09-29
+
+The audit restarted from verified `origin/main` at the PR #5 merge,
+`1812c417`, in an isolated worktree preserving the older primary checkout
+and its three local VS Code changes. Eight reproduced findings are corrected:
+blocking FIFO reads, hard-linked lock permission changes, provider pipe
+inheritance, EOF busy waiting, closed standard descriptor collisions,
+macOS interface index lookup, malformed pacman update counts, and watcher
+clock rollback transitions. macOS CI now runs runtime contracts too.
+
+The [full audit report](audit-2026-09-29.md) records severity, reproduction,
+changes, local compiler/sanitizer/static-analysis checks, native comparisons,
+real SketchyBar Mach delivery, packaging checks, and measurements. The real
+Legion deployment, macOS reboot, long-duration sleep/wake, direct publication
+syscall timing, and stable-release decision remain open. Earlier entries below
+are historical evidence, not validation of the new revision.
+
+[PR #6](https://github.com/LCS-Dev-Ergos/StatWell/pull/6) publishes the audit
+corrections at `252f19b`. Both the push and PR CI runs passed Linux package,
+Home Manager, Debug, ASan/UBSan, and GCC checks, plus macOS package, Home
+Manager, Debug, and ASan/UBSan checks. See the report for run links and
+remaining physical-host gates.
+
 ## Audit progress, 2026-09-28
 
 The audit is in progress on `LCSMacBookPro.local` (aarch64 macOS). The changed
