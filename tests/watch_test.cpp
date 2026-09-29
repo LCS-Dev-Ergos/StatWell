@@ -32,6 +32,14 @@ TEST(Watch, IgnoresMissingTimestampsAndHandlesLargeAges) {
       event_identity("daemon", "sequence=1", 1, INT64_MAX, INT64_MAX), event_identity("daemon", "sequence=1", 1, INT64_MAX, INT64_MAX - 1));
 }
 
+TEST(Watch, EmitsAnEventWhenClockRollbackMakesAValueFutureDated) {
+  const auto current = event_identity("daemon", "sequence=4", 10'000, 6'000, 10'000);
+  const auto future  = event_identity("daemon", "sequence=4", 10'000, 6'000, 9'000);
+  EXPECT_NE(current, future);
+  EXPECT_EQ(future, event_identity("daemon", "sequence=4", 10'000, 6'000, 8'000));
+  EXPECT_NE(future, event_identity("daemon", "sequence=4", 10'000, 6'000, 10'001));
+}
+
 } // namespace
 } // namespace statwell::detail
 

@@ -19,6 +19,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cerrno>
@@ -71,8 +72,27 @@ run_command(std::string_view executable, PackageKind kind, std::chrono::millisec
     return std::unexpected(ProbeError{ErrorCode::invalid_input});
 
   int descriptors[2];
+#ifdef __linux__
+  if (::pipe2(descriptors, O_CLOEXEC) != 0)
+#else
   if (::pipe(descriptors) != 0)
+#endif
     return std::unexpected(ProbeError{ErrorCode::system_failure, errno});
+  // File actions must never close stdin/stdout/stderr after dup2. Move a pipe
+  // endpoint out of that range if the caller had a standard descriptor closed.
+  for (auto& descriptor : descriptors) {
+    if (descriptor >= 3)
+      continue;
+    const int moved = ::fcntl(descriptor, F_DUPFD_CLOEXEC, 3);
+    if (moved < 0) {
+      const int code = errno;
+      ::close(descriptors[0]);
+      ::close(descriptors[1]);
+      return std::unexpected(ProbeError{ErrorCode::system_failure, code});
+    }
+    ::close(descriptor);
+    descriptor = moved;
+  }
   Fd read_end(descriptors[0]);
   Fd write_end(descriptors[1]);
   if (::fcntl(read_end.get(), F_SETFL, O_NONBLOCK) != 0)
@@ -81,7 +101,9 @@ run_command(std::string_view executable, PackageKind kind, std::chrono::millisec
   posix_spawn_file_actions_t actions;
   if (const int code = ::posix_spawn_file_actions_init(&actions); code != 0)
     return std::unexpected(ProbeError{ErrorCode::system_failure, code});
-  int action_code = ::posix_spawn_file_actions_adddup2(&actions, write_end.get(), STDOUT_FILENO);
+  int action_code = ::posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+  if (action_code == 0)
+    action_code = ::posix_spawn_file_actions_adddup2(&actions, write_end.get(), STDOUT_FILENO);
   if (action_code == 0)
     action_code = ::posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
   if (action_code == 0)
@@ -93,7 +115,13 @@ run_command(std::string_view executable, PackageKind kind, std::chrono::millisec
   int               attr_code        = ::posix_spawnattr_init(&attributes);
   const bool        attr_initialized = attr_code == 0;
   if (attr_code == 0) {
-    attr_code = ::posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    unsigned int flags = static_cast<unsigned int>(POSIX_SPAWN_SETPGROUP);
+#ifdef __APPLE__
+    // Close every descriptor not explicitly used by the spawn file actions.
+    // This is atomic with exec, including concurrently created provider pipes.
+    flags |= static_cast<unsigned int>(POSIX_SPAWN_CLOEXEC_DEFAULT);
+#endif
+    attr_code = ::posix_spawnattr_setflags(&attributes, static_cast<short>(flags));
     if (attr_code == 0)
       attr_code = ::posix_spawnattr_setpgroup(&attributes, 0);
   }
@@ -125,13 +153,14 @@ run_command(std::string_view executable, PackageKind kind, std::chrono::millisec
       failure_code = ETIMEDOUT;
       break;
     }
-    struct pollfd descriptor{read_end.get(), POLLIN | POLLHUP, 0};
+    // A pipe at EOF stays poll-ready. Ignore it while waiting for process exit.
+    struct pollfd descriptor{eof ? -1 : read_end.get(), POLLIN | POLLHUP, 0};
     if (::poll(&descriptor, 1, 25) < 0 && errno != EINTR) {
       failed       = true;
       failure_code = errno;
       break;
     }
-    for (;;) {
+    while (!eof) {
       std::array<char, 8'192> buffer{};
       const auto              count = ::read(read_end.get(), buffer.data(), buffer.size());
       if (count > 0) {
@@ -369,6 +398,25 @@ private:
     const auto line = output.substr(0, end);
     if (line.empty() || line.size() > 4'096 || line.find('\0') != std::string_view::npos
         || line.find_first_not_of(" \t\r") == std::string_view::npos || sample.total == std::numeric_limits<std::uint32_t>::max())
+      return std::unexpected(ProbeError{ErrorCode::invalid_input});
+    // checkupdates emits "package old-version -> new-version". A diagnostic
+    // line must never become a successful update count.
+    auto                            remaining = line;
+    std::array<std::string_view, 4> tokens{};
+    for (auto& token : tokens) {
+      const auto start = remaining.find_first_not_of(" \t\r");
+      if (start == std::string_view::npos)
+        return std::unexpected(ProbeError{ErrorCode::invalid_input});
+      remaining.remove_prefix(start);
+      const auto end_token = remaining.find_first_of(" \t\r");
+      token                = remaining.substr(0, end_token);
+      remaining.remove_prefix(token.size());
+    }
+    if (tokens[2] != "->" || remaining.find_first_not_of(" \t\r") != std::string_view::npos)
+      return std::unexpected(ProbeError{ErrorCode::invalid_input});
+    if (std::any_of(tokens.begin(), tokens.end(), [](std::string_view token) {
+          return std::any_of(token.begin(), token.end(), [](unsigned char character) { return character < 0x21 || character > 0x7e; });
+        }))
       return std::unexpected(ProbeError{ErrorCode::invalid_input});
     ++sample.total;
     if (end == std::string_view::npos)

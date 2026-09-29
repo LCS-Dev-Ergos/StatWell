@@ -88,7 +88,7 @@ if(STATWELL_BUILD_TESTS)
   else()
     find_package(GTest CONFIG REQUIRED)
   endif()
-  add_executable(statwell_tests tests/metrics_test.cpp tests/linux_parsers_test.cpp tests/watch_test.cpp)
+  add_executable(statwell_tests tests/metrics_test.cpp tests/linux_parsers_test.cpp tests/watch_test.cpp tests/probes_test.cpp)
   set_target_properties(statwell_tests PROPERTIES CXX_EXTENSIONS OFF)
   target_include_directories(statwell_tests PRIVATE src src/platform)
   target_link_libraries(statwell_tests PRIVATE statwell_core GTest::gtest_main)
@@ -102,6 +102,9 @@ if(STATWELL_BUILD_TESTS)
       $<TARGET_FILE:statwell>)
   add_test(NAME statwell_daemon_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/daemon_contract.py
+      $<TARGET_FILE:statwell>)
+  add_test(NAME statwell_runtime_security_contract
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_security_contract.py
       $<TARGET_FILE:statwell>)
   add_test(NAME statwell_packages_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/packages_contract.py
