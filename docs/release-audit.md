@@ -21,6 +21,12 @@ Legion deployment, macOS reboot, long-duration sleep/wake, direct publication
 syscall timing, and stable-release decision remain open. Earlier entries below
 are historical evidence, not validation of the new revision.
 
+[PR #6](https://github.com/LCS-Dev-Ergos/StatWell/pull/6) publishes the audit
+corrections at `252f19b`. Both the push and PR CI runs passed Linux package,
+Home Manager, Debug, ASan/UBSan, and GCC checks, plus macOS package, Home
+Manager, Debug, and ASan/UBSan checks. See the report for run links and
+remaining physical-host gates.
+
 ## Audit progress, 2026-09-28
 
 The audit is in progress on `LCSMacBookPro.local` (aarch64 macOS). The changed
