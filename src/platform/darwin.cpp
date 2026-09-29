@@ -98,24 +98,24 @@ private:
 };
 
 [[nodiscard]] Result<NetworkCounters> interface_counters(std::string_view name) noexcept {
-  int    count_mib[] = {CTL_NET, PF_LINK, NETLINK_GENERIC, IFMIB_SYSTEM, IFMIB_IFCOUNT};
-  int    count       = 0;
-  size_t count_size  = sizeof(count);
-  if (sysctl(count_mib, 5, &count, &count_size, nullptr, 0) != 0 || count_size != sizeof(count) || count < 0 || count > 4'096) {
+  // Interface indices start at one and can have gaps; IFCOUNT is not an index.
+  char interface_name[IFNAMSIZ]{};
+  std::memcpy(interface_name, name.data(), name.size());
+  const auto index = if_nametoindex(interface_name);
+  if (index == 0)
+    return std::unexpected(ProbeError{ErrorCode::unavailable});
+  if (index > static_cast<unsigned int>(std::numeric_limits<int>::max()))
+    return std::unexpected(ProbeError{ErrorCode::invalid_input});
+  int       mib[] = {CTL_NET, PF_LINK, NETLINK_GENERIC, IFMIB_IFDATA, static_cast<int>(index), IFDATA_GENERAL};
+  ifmibdata data{};
+  size_t    size = sizeof(data);
+  if (sysctl(mib, 6, &data, &size, nullptr, 0) != 0) {
     return std::unexpected(ProbeError{ErrorCode::system_failure, errno});
   }
-  for (int row = 0; row < count; ++row) {
-    int       mib[] = {CTL_NET, PF_LINK, NETLINK_GENERIC, IFMIB_IFDATA, row, IFDATA_GENERAL};
-    ifmibdata data{};
-    size_t    size = sizeof(data);
-    if (sysctl(mib, 6, &data, &size, nullptr, 0) != 0 || size != sizeof(data))
-      continue;
-    const auto length = strnlen(data.ifmd_name, sizeof(data.ifmd_name));
-    if (std::string_view(data.ifmd_name, length) == name) {
-      return NetworkCounters{data.ifmd_data.ifi_ibytes, data.ifmd_data.ifi_obytes};
-    }
-  }
-  return std::unexpected(ProbeError{ErrorCode::unavailable});
+  const auto length = strnlen(data.ifmd_name, sizeof(data.ifmd_name));
+  if (size != sizeof(data) || std::string_view(data.ifmd_name, length) != name)
+    return std::unexpected(ProbeError{ErrorCode::unavailable});
+  return NetworkCounters{data.ifmd_data.ifi_ibytes, data.ifmd_data.ifi_obytes};
 }
 
 } // namespace

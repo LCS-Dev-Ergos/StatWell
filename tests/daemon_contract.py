@@ -2,6 +2,8 @@
 """Exercise the owner-only snapshot contract against a real daemon process."""
 
 import json
+from concurrent.futures import ThreadPoolExecutor
+import os
 from pathlib import Path
 import signal
 import subprocess
@@ -63,11 +65,32 @@ def main() -> None:
             assert current["metrics"]["cpu"]["value_at_unix_ms"] > 0
             assert current["metrics"]["cpu"]["sample_duration_us"] >= 0
 
-            for _ in range(12):
-                response = invoke(binary, "snapshot", "--runtime-dir", str(runtime))
+            with ThreadPoolExecutor(max_workers=4) as clients:
+                responses = list(clients.map(
+                    lambda _: invoke(binary, "snapshot", "--runtime-dir", str(runtime)), range(12),
+                ))
+            for response in responses:
                 assert response.returncode == 0, response.stderr
                 assert json.loads(response.stdout)["schema_version"] == 1
+
+            # Pause/resume checks scheduler recovery without suspending the host.
+            daemon.send_signal(signal.SIGSTOP)
+            _, stopped = os.waitpid(daemon.pid, os.WUNTRACED)
+            assert os.WIFSTOPPED(stopped)
+            paused = json.loads(path.read_text())
+            time.sleep(0.4)
+            assert json.loads(path.read_text())["sequence"] == paused["sequence"]
+            daemon.send_signal(signal.SIGCONT)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                resumed = json.loads(path.read_text())
+                if resumed["sequence"] > paused["sequence"]:
+                    break
+                time.sleep(0.02)
+            else:
+                raise AssertionError("daemon did not publish after resume")
         finally:
+            daemon.send_signal(signal.SIGCONT)
             daemon.send_signal(signal.SIGTERM)
             daemon.communicate(timeout=5)
         assert daemon.returncode == 0
