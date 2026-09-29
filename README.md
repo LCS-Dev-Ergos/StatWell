@@ -1,3 +1,5 @@
+<img src="assets/brand/statwell-logo.png" width="88" alt="StatWell logo">
+
 # StatWell
 
 StatWell is a native C++ system-status library and command-line tool for macOS
@@ -6,9 +8,9 @@ available to terminal bars, desktop bars, and other local clients.
 
 The current implementation samples CPU, memory, load, disk, battery, a
 named network interface, and optional Homebrew or pacman update counts. A user
-daemon publishes those readings to an owner-only snapshot file. Consumer
-integrations are upcoming phases. The one-shot CLI output and shared snapshot
-protocol each have their own version-1 schema.
+daemon publishes those readings to an owner-only snapshot file. Kitty and
+SketchyBar can consume the shared data. The one-shot CLI output and shared
+snapshot protocol each have their own version-1 schema.
 
 ## Build
 
@@ -69,8 +71,9 @@ Add the StatWell flake as an input to a Home Manager configuration and import
 }
 ```
 
-The module installs the CLI and configures a launchd user agent on macOS or
-a systemd user service on Linux. Enabling it starts the daemon on the next
+The module installs the CLI and configures a launchd agent in the graphical
+login domain on macOS or a systemd user service on Linux. Enabling it starts
+the daemon on the next
 Home Manager activation. Set `networkInterface` for network rates; the
 other metrics work without it. `diskPath`, `runtimeDir`, `cadences`, and
 `packageTimeoutMs` map to the daemon options. Package checks are opt-in via
@@ -78,6 +81,13 @@ other metrics work without it. `diskPath`, `runtimeDir`, `cadences`, and
 `homebrewBin` or `checkupdatesBin` for nonstandard executable paths. The
 Homebrew daemon defaults to `HOMEBREW_NO_AUTO_UPDATE=1`. The module does not
 provide a Nix package-update check.
+
+The icon source is [assets/brand/statwell-logo.png](assets/brand/statwell-logo.png),
+with a macOS `.icns` installed under `share/statwell`. The mark combines three
+status columns with an open monitoring ring and one amber active indicator.
+Showing it for a background item in macOS System Settings also requires an
+associated, appropriately signed app bundle; the Home Manager agent remains a
+standalone executable and does not claim app attribution.
 
 The flake checks build sample Home Manager generations for both platforms
 without activating either service. The [CI workflow](.github/workflows/ci.yml)

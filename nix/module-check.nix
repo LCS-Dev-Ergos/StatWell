@@ -27,4 +27,6 @@ let
     ];
   };
 in
+assert !darwin || evaluation.config.launchd.agents.statwell.domain == "gui";
+assert !darwin || evaluation.config.launchd.agents.statwell.config.LimitLoadToSessionType == null;
 evaluation.activationPackage
