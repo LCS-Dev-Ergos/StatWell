@@ -66,62 +66,61 @@ struct Entry {
 
 void help() {
   std::cout << R"(NAME
-  statwell - sample native system status metrics
+  statwell - Sample Native System Status Metrics
 
 SYNOPSIS
-  statwell sample [OPTIONS]
-  statwell snapshot [--runtime-dir PATH] [--disk-path PATH] [--interface NAME]
-                    [--provider NAME]...
-  statwell daemon [--runtime-dir PATH] [--disk-path PATH] [--interface NAME]
-                  [--cadence NAME=MS]... [--provider NAME]...
-  statwell watch --metric NAME --event NAME [--runtime-dir PATH]
-                 [--disk-path PATH] [--interface NAME]
-  statwell --help | --version
+  statwell [sample] [SAMPLE OPTIONS]
+  statwell snapshot [SERVICE OPTIONS]
+  statwell daemon [SERVICE OPTIONS]
+  statwell watch --metric NAME --event NAME [SERVICE OPTIONS]
+  statwell [--help | --version]
 
-DESCRIPTION
-  Read selected metrics once using native operating-system APIs. CPU and
-  network rates use two counter reads separated by --interval-ms. Values use
-  bytes, bytes per second, percentages, and load averages as named.
-  The daemon publishes an owner-only snapshot for any number of readers.
-  Snapshot falls back to one-shot sampling if the daemon is absent. On macOS,
-  watch follows one metric and sends its fields as a SketchyBar Mach event.
+COMMANDS
+  sample     Read metrics once; this is the default command.
+  snapshot   Read the daemon's shared snapshot, or sample once if absent.
+  daemon     Keep an owner-only snapshot current for local readers.
+  watch      Forward one metric to a SketchyBar event (macOS only).
 
-OPTIONS
-  --metric NAME       Select a metric; repeat for cpu, memory, load, disk,
-                      battery, network, homebrew, or pacman. Default: the
-                      five common system metrics.
-  --format FORMAT     json (default) or kv. Both formats have version 1.
-  --disk-path PATH    Filesystem path to measure. Default: home directory.
-  --interface NAME    Network interface to measure; required for network.
-  --interval-ms N     Counter interval, 50..5000 ms. Default: 200 ms.
-  --runtime-dir PATH  Private snapshot directory. Default: user runtime dir.
-  --cadence NAME=MS   Daemon probe interval, 100..3600000 ms.
-  --provider NAME     Enable homebrew or pacman in daemon/snapshot; repeatable.
-  --homebrew-bin PATH Absolute path to brew. Default: /opt/homebrew/bin/brew.
-  --checkupdates-bin PATH  Absolute path to checkupdates.
-  --package-timeout-ms N   Provider deadline, 100..60000 ms. Default: 10000.
-  --event NAME        SketchyBar event name for watch.
-  -h, --help          Show this help.
-  --version           Show the program version.
+METRICS
+  cpu, memory, load, disk, battery, network, homebrew, pacman
+  sample reads cpu, memory, load, disk, and battery by default. Network needs
+  --interface; package checks run only when selected or enabled as providers.
 
-OUTPUT
-  Each selected metric has status ok or error. Errors include a stable code;
-  unsupported and unavailable readings are never reported as zero. The JSON
-  schema and key names are versioned separately from the program version.
+SAMPLE OPTIONS
+  --metric NAME           Select a metric; may be repeated.
+  --format json|kv        Output format (default: json). Both use schema v1.
+  --interval-ms N         CPU/network counter interval: 50..5000 (default: 200).
+
+SERVICE OPTIONS
+  --runtime-dir PATH      Private snapshot directory (default: user runtime dir).
+  --provider NAME         Enable homebrew or pacman; may be repeated.
+  --cadence NAME=MS       Daemon probe interval: 100..3600000 ms.
+  --metric NAME           Metric to forward (watch only).
+  --event NAME            SketchyBar event name (watch only).
+
+SHARED OPTIONS
+  --disk-path PATH        Filesystem to measure (default: home directory).
+  --interface NAME        Interface for network rates; required for network.
+  --homebrew-bin PATH     Absolute brew path (default: /opt/homebrew/bin/brew).
+  --checkupdates-bin PATH Absolute checkupdates path (default: /usr/bin/checkupdates).
+  --package-timeout-ms N  Package check deadline: 100..60000 ms (default: 10000).
+  -h, --help              Show this help.
+  --version               Show the program version (sample command).
+
+OUTPUT AND EXIT STATUS
+  Values use bytes, bytes/second, percentages, and load averages. Metric
+  errors carry a stable code; unavailable readings never become zero.
+  sample exits 0 if any selected metric succeeds, 1 if none succeeds, or 2
+  for invalid arguments. snapshot exits 0 when it prints a snapshot; inspect
+  each metric's status to distinguish successful and failed probes.
 
 EXAMPLES
   statwell sample --metric cpu --metric memory --format json
   statwell sample --metric network --interface en0 --format kv
   statwell daemon --interface en0 --cadence battery=30000
   statwell daemon --provider homebrew --cadence homebrew=3600000
-  statwell sample --metric pacman --format kv
-  statwell snapshot
-  statwell watch --metric cpu --event statwell_cpu
-
-EXIT STATUS
-  0  At least one selected metric was sampled successfully.
-  1  No selected metric was sampled successfully.
-  2  Invalid command-line arguments.
+  statwell snapshot --runtime-dir /tmp/statwell-501
+  statwell watch --metric network --event statwell_network --interface en0
 )";
 }
 

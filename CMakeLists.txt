@@ -58,6 +58,8 @@ if(APPLE)
     ${CMAKE_CURRENT_BINARY_DIR}/dev.lcs.statwell.plist @ONLY)
   install(FILES ${CMAKE_CURRENT_BINARY_DIR}/dev.lcs.statwell.plist
     DESTINATION ${CMAKE_INSTALL_DATADIR}/statwell/services)
+  install(FILES assets/brand/statwell.icns
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/statwell)
 else()
   configure_file(services/statwell.service.in
     ${CMAKE_CURRENT_BINARY_DIR}/statwell.service @ONLY)
