@@ -1,4 +1,9 @@
-<h1 align="center"><img src="assets/brand/statwell-logo.png" width="56" alt="StatWell icon">&nbsp; StatWell</h1>
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/statwell-wordmark-dark.png">
+    <img src="assets/brand/statwell-wordmark.png" width="660" alt="StatWell">
+  </picture>
+</h1>
 
 StatWell is a native C++ system-status library and command-line tool for macOS
 and Linux. Its goal is to sample metrics once and make the same typed data
