@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -148,7 +149,13 @@ struct EventInput {
     return {};
   const auto               record = document.substr(begin, record_end - begin + 1);
   std::vector<std::string> arguments{"--trigger", std::string(event)};
-  for (const auto name : {"status", "sequence", "sampled_at_unix_ms", "value_at_unix_ms", "max_age_ms", "error", "native_code"}) {
+  for (const auto name : {"instance_id", "captured_at_unix_ms"}) {
+    const auto value = field({document, name});
+    if (!value.empty())
+      arguments.emplace_back(std::string(name) + "=" + std::string(value));
+  }
+  for (const auto name :
+       {"status", "sequence", "sampled_at_unix_ms", "value_at_unix_ms", "max_age_ms", "refreshing", "error", "native_code"}) {
     const auto value = field({record, name});
     if (!value.empty())
       arguments.emplace_back(std::string(name) + "=" + std::string(value));
@@ -228,16 +235,40 @@ int run_watch(const RuntimeOptions& options, std::string_view metric, std::strin
     std::cerr << "statwell: invalid watch metric or event\n";
     return 2;
   }
-  MachPort port;
-  if (!port.send({"--add", "event", std::string(event)})) {
-    std::cerr << "statwell: SketchyBar Mach service is unavailable\n";
-    return 1;
-  }
+  MachPort    port;
+  bool        registered      = false;
+  auto        reconnect_delay = std::chrono::seconds(1);
+  auto        next_replay     = std::chrono::steady_clock::time_point::min();
+  std::string last_error;
+  const auto  report = [&last_error](std::string_view error) {
+    if (last_error != error) {
+      std::cerr << "statwell watch: " << error << '\n';
+      last_error = error;
+    }
+  };
   std::string                previous;
   std::optional<std::string> fallback;
   auto                       next_fallback = std::chrono::steady_clock::time_point::min();
   for (;;) {
-    auto cached = read_snapshot(effective.runtime_dir);
+    if (!registered) {
+      if (!port.send({"--add", "event", std::string(event)})) {
+        report("Mach service unavailable; reconnecting");
+        std::this_thread::sleep_for(reconnect_delay);
+        reconnect_delay = std::min(reconnect_delay * 2, std::chrono::seconds(30));
+        continue;
+      }
+      registered = true;
+      previous.clear();
+      next_replay = std::chrono::steady_clock::time_point::min();
+    }
+    std::optional<std::string> cached;
+    try {
+      cached = read_snapshot(effective.runtime_dir);
+    } catch (const std::exception& error) {
+      report(error.what());
+      std::this_thread::sleep_for(std::chrono::seconds(2));
+      continue;
+    }
     if (cached)
       fallback.reset();
     else if (!fallback || std::chrono::steady_clock::now() >= next_fallback) {
@@ -252,21 +283,36 @@ int run_watch(const RuntimeOptions& options, std::string_view metric, std::strin
     const auto  instance  = field({document, "instance_id"});
     const auto  arguments = event_arguments({document, metric, event});
     if (arguments.empty()) {
-      std::cerr << "statwell: selected metric is absent from snapshot\n";
-      return 1;
+      report("selected metric absent; waiting for snapshot recovery");
+      std::this_thread::sleep_for(std::chrono::seconds(2));
+      continue;
     }
     const auto sequence =
         std::find_if(arguments.begin(), arguments.end(), [](const std::string& argument) { return argument.starts_with("sequence="); });
     const auto value_at = argument_number(arguments, "value_at_unix_ms");
     const auto max_age  = argument_number(arguments, "max_age_ms");
     const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    const std::string identity = detail::event_identity(instance, sequence == arguments.end() ? "" : *sequence, value_at, max_age, now_ms);
-    if (identity != previous) {
-      if (!port.send(arguments)) {
-        std::cerr << "statwell: unable to deliver SketchyBar event\n";
-        return 1;
+    const bool refreshing      = std::find(arguments.begin(), arguments.end(), "refreshing=true") != arguments.end();
+    const std::string identity = detail::event_identity(instance, sequence == arguments.end() ? "" : *sequence, value_at, max_age, now_ms)
+                                 + (refreshing ? ":refreshing" : ":idle");
+    const auto        now      = std::chrono::steady_clock::now();
+    const bool        replay   = now >= next_replay;
+    if (identity != previous || replay) {
+      // Mach delivery does not acknowledge a Lua callback. Re-register and
+      // replay periodically so bar reloads and late subscriptions self-heal.
+      if ((replay && !port.send({"--add", "event", std::string(event)})) || !port.send(arguments)) {
+        report("Mach delivery failed; reconnecting");
+        registered = false;
+        continue;
       }
       previous = identity;
+      if (replay)
+        next_replay = now + std::chrono::seconds(30);
+      reconnect_delay = std::chrono::seconds(1);
+      if (!last_error.empty()) {
+        std::cerr << "statwell watch: delivery recovered\n";
+        last_error.clear();
+      }
     }
     std::this_thread::sleep_for(cached ? std::chrono::milliseconds(200) : std::chrono::seconds(2));
   }

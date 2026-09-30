@@ -19,6 +19,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -28,6 +29,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
+#include <iostream>
 #include <locale>
 #include <sstream>
 #include <stdexcept>
@@ -92,6 +94,42 @@ private:
   if (!S_ISDIR(metadata.st_mode) || metadata.st_uid != ::geteuid() || (static_cast<unsigned int>(metadata.st_mode) & 0777U) != 0700U)
     throw std::runtime_error("runtime directory must be owned by this user with mode 0700");
   return dir;
+}
+
+void validate_request(int fd) {
+  struct stat metadata{};
+  if (::fstat(fd, &metadata) != 0)
+    fail("stat refresh request");
+  if (!S_ISREG(metadata.st_mode) || metadata.st_uid != ::geteuid() || metadata.st_nlink != 1
+      || (static_cast<unsigned int>(metadata.st_mode) & 0777U) != 0600U || metadata.st_size != 0)
+    throw std::runtime_error("refresh request must be an empty owner-only regular file");
+}
+
+[[nodiscard]] bool consume_refresh(int dir, std::string_view provider) {
+  const std::string name = "refresh." + std::string(provider);
+  Fd                request(::openat(dir, name.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
+  if (request.get() < 0 && errno == ENOENT)
+    return false;
+  if (request.get() < 0)
+    fail("open refresh request");
+  validate_request(request.get());
+  if (::unlinkat(dir, name.c_str(), 0) != 0)
+    fail("consume refresh request");
+  return true;
+}
+
+void schedule_package(Registration& item, Clock::time_point now) {
+  if (item.source->failed()) {
+    item.failures = std::min(item.failures + 1, 4U);
+    item.next     = now + package_retry_delay(item.failures);
+  } else {
+    item.failures = 0;
+    item.next     = now + item.cadence;
+  }
+  if (item.refresh_queued) {
+    item.refresh_queued = false;
+    item.next           = now;
+  }
 }
 
 void write_all(int fd, std::string_view content) {
@@ -190,7 +228,13 @@ std::string default_runtime_dir() {
 #ifdef __linux__
   const char* base = std::getenv("XDG_RUNTIME_DIR");
 #else
-  const char* base = std::getenv("TMPDIR");
+  const char*             base = std::getenv("TMPDIR");
+  std::array<char, 4'096> user_temp{};
+  if (base == nullptr || *base == '\0') {
+    const auto size = ::confstr(_CS_DARWIN_USER_TEMP_DIR, user_temp.data(), user_temp.size());
+    if (size > 0 && size <= user_temp.size())
+      base = user_temp.data();
+  }
 #endif
   if (base == nullptr || *base == '\0')
     base = "/tmp";
@@ -223,15 +267,38 @@ int run_daemon(const RuntimeOptions& options) {
     const auto now     = Clock::now();
     bool       changed = false;
     for (auto& item : registrations) {
-      if (now >= item.next) {
+      const bool package = item.name == "homebrew" || item.name == "pacman";
+      bool       refresh = false;
+      if (package) {
+        try {
+          refresh            = consume_refresh(dir.get(), item.name);
+          item.refresh_error = false;
+        } catch (const std::exception& error) {
+          if (!item.refresh_error)
+            std::cerr << "statwell: rejected refresh request: " << error.what() << '\n';
+          item.refresh_error = true;
+        }
+      }
+      if (refresh) {
+        if (item.source->pending())
+          item.refresh_queued = true;
+        else
+          item.next = now;
+      }
+      if (item.source->poll(item.duration_us)) {
+        if (package)
+          schedule_package(item, Clock::now());
+        changed = true;
+      }
+      if (now >= item.next && !item.source->pending()) {
         const auto started = Clock::now();
         item.source->sample();
         item.duration_us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - started).count();
         item.next        = Clock::now() + item.cadence;
         changed          = true;
+        if (package && !item.source->pending())
+          schedule_package(item, Clock::now());
       }
-      if (item.source->poll(item.duration_us))
-        changed = true;
     }
     if (changed) {
       ++sequence;
@@ -239,7 +306,7 @@ int run_daemon(const RuntimeOptions& options) {
     }
     auto next = Clock::now() + std::chrono::milliseconds(250);
     for (const auto& item : registrations)
-      if (item.next < next)
+      if (!item.source->pending() && item.next < next)
         next = item.next;
     std::this_thread::sleep_until(next);
   }
@@ -293,6 +360,33 @@ std::optional<std::string> read_snapshot(std::string_view runtime_dir) {
   if (!content.starts_with("{\"schema_version\":1,"))
     throw std::runtime_error("unsupported or corrupt snapshot schema");
   return content;
+}
+
+void request_refresh(std::string_view runtime_dir, std::string_view provider) {
+  if (provider != "homebrew" && provider != "pacman")
+    throw std::invalid_argument("refresh requires one package provider");
+  const auto content = read_snapshot(runtime_dir);
+  if (!content || content->find("\"" + std::string(provider) + "\":{") == std::string::npos)
+    throw std::runtime_error("refresh requires a running daemon with this provider enabled");
+  Fd                dir  = open_private_dir(runtime_dir.empty() ? default_runtime_dir() : std::string(runtime_dir), false);
+  const std::string name = "refresh." + std::string(provider);
+  Fd                request(::openat(dir.get(), name.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600));
+  if (request.get() < 0 && errno == EEXIST) {
+    Fd existing(::openat(dir.get(), name.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
+    if (existing.get() < 0 && errno == ENOENT) {
+      // The daemon consumed the coalesced request while it was being checked.
+      return;
+    }
+    if (existing.get() < 0)
+      fail("open existing refresh request");
+    validate_request(existing.get());
+    return;
+  }
+  if (request.get() < 0)
+    fail("create refresh request");
+  if (::fchmod(request.get(), 0600) != 0)
+    fail("set refresh permissions");
+  validate_request(request.get());
 }
 
 std::string one_shot_snapshot(const RuntimeOptions& options) {

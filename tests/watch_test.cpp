@@ -10,12 +10,21 @@
  */
 //===---------------------------------------------------------------------------===//
 
+#include "registry.hpp"
 #include "watch_state.hpp"
 
 #include <gtest/gtest.h>
 
 namespace statwell::detail {
 namespace {
+
+TEST(Packages, RetryBackoffIsBoundedAndIndependentOfCadence) {
+  EXPECT_EQ(package_retry_delay(1), std::chrono::seconds(30));
+  EXPECT_EQ(package_retry_delay(2), std::chrono::seconds(60));
+  EXPECT_EQ(package_retry_delay(3), std::chrono::seconds(120));
+  EXPECT_EQ(package_retry_delay(4), std::chrono::seconds(300));
+  EXPECT_EQ(package_retry_delay(100), std::chrono::seconds(300));
+}
 
 TEST(Watch, EmitsOneExpiryEventForAnUnchangedSample) {
   const auto initial = event_identity("daemon", "sequence=4", 10'000, 6'000, 16'000);
