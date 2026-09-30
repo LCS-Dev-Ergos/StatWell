@@ -23,14 +23,14 @@ void stop(int) {
 
 // A private test service has no launchd plist to check in to. Dynamic bootstrap
 // registration is required only by this fixture, not by StatWell's client.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 [[nodiscard]] kern_return_t register_port(std::string& name, mach_port_t port) {
   return ::bootstrap_register(::bootstrap_port, name.data(), port);
 }
 
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
 class Receiver {
 public:
