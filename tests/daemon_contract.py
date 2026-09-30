@@ -49,6 +49,16 @@ def main() -> None:
             assert snapshot.returncode == 0, snapshot.stderr
             assert json.loads(snapshot.stdout)["instance_id"] == first["instance_id"]
 
+            for extra in ((), ("--cached-only",)):
+                invalid = invoke(binary, "snapshot", "--runtime-dir", str(runtime),
+                                 "--cadence", "unknown=1000", *extra)
+                assert invalid.returncode == 2, "cache must not bypass argument validation"
+                assert not invalid.stdout
+
+            disabled = invoke(binary, "snapshot", "--runtime-dir", str(runtime),
+                              "--cadence", "homebrew=1000")
+            assert disabled.returncode == 2, "package cadence requires its provider"
+
             duplicate = invoke(binary, "daemon", "--runtime-dir", str(runtime))
             assert duplicate.returncode != 0
 

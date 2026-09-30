@@ -36,6 +36,8 @@ public:
   virtual bool poll(std::int64_t&) noexcept { return false; }
 
   [[nodiscard]] virtual bool pending() const noexcept { return false; }
+
+  [[nodiscard]] virtual bool failed() const noexcept { return false; }
 };
 
 /** @brief A registered probe with its independent monotonic deadline. */
@@ -44,8 +46,14 @@ struct Registration {
   std::chrono::milliseconds             cadence;
   std::unique_ptr<MetricSource>         source;
   std::chrono::steady_clock::time_point next;
-  std::int64_t                          duration_us = 0;
+  std::int64_t                          duration_us    = 0;
+  unsigned                              failures       = 0;
+  bool                                  refresh_queued = false;
+  bool                                  refresh_error  = false;
 };
+
+/** @brief Retry errors independently of the ordinary metric freshness budget. */
+[[nodiscard]] std::chrono::seconds package_retry_delay(unsigned failures) noexcept;
 
 /** @brief Construct built-in probes once; the scheduler treats them uniformly. */
 [[nodiscard]] std::vector<Registration> make_registry(const RuntimeOptions& options);

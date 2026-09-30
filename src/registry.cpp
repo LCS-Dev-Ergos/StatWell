@@ -77,6 +77,7 @@ public:
             : last_ok_     ? "ok"
                            : "error")
         << '"';
+    out << ",\"refreshing\":" << (pending() ? "true" : "false");
     if (sequence_ > 0 && !last_ok_)
       out << ",\"error\":\"" << error_name(error_.code) << "\",\"native_code\":" << error_.native_code;
     if (has_value_) {
@@ -86,6 +87,8 @@ public:
     }
     out << '}';
   }
+
+  [[nodiscard]] bool failed() const noexcept final { return sequence_ > 0 && !last_ok_; }
 
 protected:
   void observe(Result<T> result) noexcept {
@@ -213,6 +216,16 @@ private:
 };
 
 } // namespace
+
+std::chrono::seconds package_retry_delay(unsigned failures) noexcept {
+  if (failures <= 1)
+    return std::chrono::seconds(30);
+  if (failures == 2)
+    return std::chrono::seconds(60);
+  if (failures == 3)
+    return std::chrono::seconds(120);
+  return std::chrono::seconds(300);
+}
 
 std::vector<Registration> make_registry(const RuntimeOptions& options) {
   const auto                now = std::chrono::steady_clock::now();

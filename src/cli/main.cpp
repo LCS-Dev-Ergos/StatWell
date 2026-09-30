@@ -71,6 +71,7 @@ void help() {
 SYNOPSIS
   statwell [sample] [SAMPLE OPTIONS]
   statwell snapshot [SERVICE OPTIONS]
+  statwell refresh --provider NAME [--runtime-dir PATH]
   statwell daemon [SERVICE OPTIONS]
   statwell watch --metric NAME --event NAME [SERVICE OPTIONS]
   statwell [--help | --version]
@@ -80,6 +81,7 @@ COMMANDS
   snapshot   Read the daemon's shared snapshot, or sample once if absent.
   daemon     Keep an owner-only snapshot current for local readers.
   watch      Forward one metric to a SketchyBar event (macOS only).
+  refresh    Request a package check without restarting the daemon.
 
 METRICS
   cpu, memory, load, disk, battery, network, homebrew, pacman
@@ -93,6 +95,7 @@ SAMPLE OPTIONS
 
 SERVICE OPTIONS
   --runtime-dir PATH      Private snapshot directory (default: user runtime dir).
+  --cached-only           Read only shared data; no fallback (snapshot only).
   --provider NAME         Enable homebrew or pacman; may be repeated.
   --cadence NAME=MS       Daemon probe interval: 100..3600000 ms.
   --metric NAME           Metric to forward (watch only).
@@ -113,6 +116,7 @@ OUTPUT AND EXIT STATUS
   sample exits 0 if any selected metric succeeds, 1 if none succeeds, or 2
   for invalid arguments. snapshot exits 0 when it prints a snapshot; inspect
   each metric's status to distinguish successful and failed probes.
+  refresh exits 0 when queued; snapshot --cached-only exits 1 if absent.
 
 EXAMPLES
   statwell sample --metric cpu --metric memory --format json
@@ -121,6 +125,7 @@ EXAMPLES
   statwell daemon --provider homebrew --cadence homebrew=3600000
   statwell snapshot --runtime-dir /tmp/statwell-501
   statwell watch --metric network --event statwell_network --interface en0
+  statwell refresh --provider homebrew
 )";
 }
 
@@ -128,6 +133,7 @@ struct RuntimeArgs {
   statwell::RuntimeOptions options;
   std::string              metric;
   std::string              event;
+  bool                     cached_only = false;
 };
 
 bool parse_runtime(int argc, char** argv, RuntimeArgs& parsed) {
@@ -138,6 +144,10 @@ bool parse_runtime(int argc, char** argv, RuntimeArgs& parsed) {
     if (arg == "--help" || arg == "-h") {
       help();
       std::exit(0);
+    }
+    if (arg == "--cached-only") {
+      parsed.cached_only = true;
+      continue;
     }
     if (index + 1 >= argc)
       return false;
@@ -180,6 +190,13 @@ bool parse_runtime(int argc, char** argv, RuntimeArgs& parsed) {
         return false;
       parsed.options.cadence_overrides[std::string(name)] = std::chrono::milliseconds(milliseconds);
     } else
+      return false;
+  }
+  // Validate before reading cache: an existing daemon must not hide bad options.
+  for (const auto& [name, cadence] : parsed.options.cadence_overrides) {
+    (void)cadence;
+    if (std::find(kNames.begin(), kNames.end(), name) == kNames.end()
+        || ((name == "homebrew" || name == "pacman") && !parsed.options.providers.contains(name)))
       return false;
   }
   return true;
@@ -414,14 +431,14 @@ int main(int argc, char** argv) {
   try {
     if (argc > 1) {
       const std::string_view command(argv[1]);
-      if (command == "daemon" || command == "snapshot" || command == "watch") {
+      if (command == "daemon" || command == "snapshot" || command == "watch" || command == "refresh") {
         RuntimeArgs parsed;
         if (!parse_runtime(argc, argv, parsed)) {
           std::cerr << "statwell: invalid arguments (see --help)\n";
           return 2;
         }
         if (command == "daemon") {
-          if (!parsed.metric.empty() || !parsed.event.empty())
+          if (!parsed.metric.empty() || !parsed.event.empty() || parsed.cached_only)
             return 2;
           return statwell::run_daemon(parsed.options);
         }
@@ -429,9 +446,19 @@ int main(int argc, char** argv) {
           if (!parsed.metric.empty() || !parsed.event.empty())
             return 2;
           const auto content = statwell::read_snapshot(parsed.options.runtime_dir);
+          if (!content && parsed.cached_only)
+            return 1;
           std::cout << (content ? *content : statwell::one_shot_snapshot(parsed.options));
           return 0;
         }
+        if (command == "refresh") {
+          if (!parsed.metric.empty() || !parsed.event.empty() || parsed.cached_only || parsed.options.providers.size() != 1)
+            return 2;
+          statwell::request_refresh(parsed.options.runtime_dir, *parsed.options.providers.begin());
+          return 0;
+        }
+        if (parsed.cached_only)
+          return 2;
         if (parsed.metric.empty() || parsed.event.empty())
           return 2;
         return statwell::run_watch(parsed.options, parsed.metric, parsed.event);
