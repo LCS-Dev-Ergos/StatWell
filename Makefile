@@ -68,10 +68,10 @@ run: build
 	$(BUILD_DIR)/statwell sample $(ARGS)
 
 format:
-	clang-format -i include/statwell/*.hpp src/*.cpp src/*.hpp src/cli/*.cpp src/platform/*.cpp src/platform/*.hpp tests/*.cpp
+	clang-format -i include/statwell/*.hpp src/*.cpp src/*.hpp src/cli/*.cpp src/platform/*.cpp src/platform/*.hpp tests/*.cpp tests/fixtures/*.cpp
 
 format-check:
-	clang-format --dry-run --Werror include/statwell/*.hpp src/*.cpp src/*.hpp src/cli/*.cpp src/platform/*.cpp src/platform/*.hpp tests/*.cpp
+	clang-format --dry-run --Werror include/statwell/*.hpp src/*.cpp src/*.hpp src/cli/*.cpp src/platform/*.cpp src/platform/*.hpp tests/*.cpp tests/fixtures/*.cpp
 
 tidy: build
 	clang-tidy -p $(BUILD_DIR) src/metrics.cpp src/packages.cpp src/registry.cpp src/runtime.cpp src/watch.cpp \
