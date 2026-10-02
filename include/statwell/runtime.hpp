@@ -46,6 +46,9 @@ int run_daemon(const RuntimeOptions& options);
 /** @brief Read a version-1 snapshot, or nullopt if the daemon has not published one. */
 [[nodiscard]] std::optional<std::string> read_snapshot(std::string_view runtime_dir);
 
+/** @brief Coalesce a refresh request for one enabled package provider. */
+void request_refresh(std::string_view runtime_dir, std::string_view provider);
+
 /** @brief Produce a version-1 snapshot when the daemon is absent. */
 [[nodiscard]] std::string one_shot_snapshot(const RuntimeOptions& options);
 

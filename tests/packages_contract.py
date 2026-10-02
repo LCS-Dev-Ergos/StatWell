@@ -215,6 +215,98 @@ print('{{"formulae":[{{"name":"first"}}],"casks":[]}}' if attempt == 1 else 'bad
         assert fallback.returncode == 0, fallback.stderr
         assert json.loads(fallback.stdout)["metrics"]["pacman"]["value"]["total"] == 0
 
+        verify_recovery(binary, root)
+
+
+def verify_recovery(binary: str, root: Path) -> None:
+    """Drive the real scheduler, owner-only requests and automatic error recovery."""
+    attempts = root / "recovery-attempts"
+    slow = root / "slow"
+    brew = executable(root, "recovering-brew", f'''
+import json, pathlib, sys, time
+counter = pathlib.Path({str(attempts)!r})
+n = int(counter.read_text()) + 1 if counter.exists() else 1
+counter.write_text(str(n))
+if pathlib.Path({str(slow)!r}).exists(): time.sleep(0.8)
+if n == 2: sys.exit(1)
+print(json.dumps({{"formulae": [] if n == 1 else [{{"name":"a"}},{{"name":"b"}}], "casks": []}}))
+''')
+    runtime = root / "recovering"
+    path = runtime / "snapshot.json"
+    daemon = subprocess.Popen(
+        [binary, "daemon", "--runtime-dir", str(runtime), "--provider", "homebrew",
+         "--homebrew-bin", brew, "--cadence", "homebrew=3600000", "--cadence", "cpu=100"],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    def command(*arguments):
+        return subprocess.run([binary, *arguments, "--runtime-dir", str(runtime)],
+                              capture_output=True, text=True, timeout=3)
+    def refresh():
+        result = command("refresh", "--provider", "homebrew")
+        assert result.returncode == 0, result.stderr
+    try:
+        initial = wait_snapshot(path, lambda d: d["metrics"]["homebrew"]["status"] == "ok")
+        instance = initial["instance_id"]
+        assert initial["metrics"]["homebrew"]["value"]["total"] == 0
+        for _ in range(3):
+            result = command("snapshot", "--cached-only", "--provider", "homebrew")
+            assert result.returncode == 0, result.stderr
+        assert attempts.read_text() == "1", "cache reads must never execute Brew"
+        assert command("refresh", "--provider", "pacman").returncode == 1
+        refresh()
+        failed = wait_snapshot(path, lambda d: d["metrics"]["homebrew"]["status"] == "error")
+        assert failed["metrics"]["homebrew"]["value"]["total"] == 0
+        assert failed["metrics"]["homebrew"]["max_age_ms"] == 10800000
+        recovered = wait_snapshot(path, lambda d: d["metrics"]["homebrew"]["status"] == "ok"
+                                  and d["metrics"]["homebrew"]["value"]["total"] == 2, 40)
+        assert recovered["instance_id"] == instance, "refresh and retry must not restart the daemon"
+        assert recovered["metrics"]["cpu"]["sequence"] > failed["metrics"]["cpu"]["sequence"] + 10
+        assert attempts.read_text() == "3", "transient errors must retry before the hourly cadence"
+        time.sleep(0.4)
+        assert attempts.read_text() == "3", "success must restore the hourly cadence"
+
+        # A burst during one running check schedules exactly one subsequent check.
+        slow.touch()
+        refresh()
+        wait_snapshot(path, lambda d: d["metrics"]["homebrew"]["refreshing"])
+        daemon.send_signal(signal.SIGSTOP)
+        for _ in range(8):
+            refresh()
+        daemon.send_signal(signal.SIGCONT)
+        finished = wait_snapshot(path, lambda d: d["metrics"]["homebrew"]["sequence"] >= 5
+                                 and not d["metrics"]["homebrew"]["refreshing"])
+        assert finished["instance_id"] == instance
+        assert attempts.read_text() == "5"
+
+        # Invalid requests neither follow links nor block/crash the sampler.
+        request = runtime / "refresh.homebrew"
+        outside = root / "request-outside"
+        outside.touch(mode=0o600)
+        for kind in ("symlink", "fifo", "hardlink", "permissions"):
+            if kind == "symlink": request.symlink_to(outside)
+            elif kind == "fifo": os.mkfifo(request, 0o600)
+            elif kind == "hardlink": os.link(outside, request)
+            else:
+                request.touch(mode=0o600)
+                request.chmod(0o644)
+            before = json.loads(path.read_text())["metrics"]["cpu"]["sequence"]
+            assert command("refresh", "--provider", "homebrew").returncode == 1
+            wait_snapshot(path, lambda d: d["metrics"]["cpu"]["sequence"] > before)
+            assert daemon.poll() is None
+            request.unlink()
+        assert outside.read_bytes() == b""
+        assert attempts.read_text() == "5"
+    finally:
+        daemon.send_signal(signal.SIGCONT)
+        daemon.terminate()
+        _, stderr = daemon.communicate(timeout=5)
+    assert daemon.returncode == 0, stderr
+    absent = subprocess.run([binary, "snapshot", "--cached-only", "--runtime-dir", str(root / "absent"),
+                             "--provider", "homebrew", "--homebrew-bin", brew],
+                            capture_output=True, text=True, timeout=3)
+    assert absent.returncode == 1 and not absent.stdout
+    assert attempts.read_text() == "5", "absent cache must not run a one-shot provider"
+
 
 if __name__ == "__main__":
     main()

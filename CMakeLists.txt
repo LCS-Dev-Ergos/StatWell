@@ -109,4 +109,14 @@ if(STATWELL_BUILD_TESTS)
   add_test(NAME statwell_packages_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/packages_contract.py
       $<TARGET_FILE:statwell>)
+  if(APPLE)
+    add_executable(statwell_mach_fixture tests/fixtures/mach_server.cpp)
+    target_compile_features(statwell_mach_fixture PRIVATE cxx_std_23)
+    set_target_properties(statwell_mach_fixture PROPERTIES CXX_EXTENSIONS OFF)
+    target_compile_options(statwell_mach_fixture PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME statwell_watch_transport_contract
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/watch_transport_contract.py
+        $<TARGET_FILE:statwell> $<TARGET_FILE:statwell_mach_fixture>)
+    set_tests_properties(statwell_watch_transport_contract PROPERTIES TIMEOUT 65 LABELS "macos;transport")
+  endif()
 endif()
